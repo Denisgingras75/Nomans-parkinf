@@ -21,6 +21,7 @@ type StateResponse = {
   shuttle: { position: LatLng | null; updatedAt: number | null; onboard: number; capacity: number };
   stops: Stop[];
   nomans: LatLng;
+  me: { id: string; name: string; onShift: boolean; phone: string | null } | null;
 };
 
 export default function DriverPage() {
@@ -31,6 +32,7 @@ export default function DriverPage() {
   const [flash, setFlash] = useState(false);
   const [broadcasting, setBroadcasting] = useState(false);
   const [broadcastError, setBroadcastError] = useState<string | null>(null);
+  const [shiftToggling, setShiftToggling] = useState(false);
 
   const audioCtxRef = useRef<AudioContext | null>(null);
   const knownPickupIdsRef = useRef<Set<string>>(new Set());
@@ -96,6 +98,28 @@ export default function DriverPage() {
     audioCtxRef.current = createChimeContext();
     localStorage.setItem("nomans.driverPass", passcode);
     setAuthed(true);
+  };
+
+  const toggleShift = async () => {
+    if (!state?.me) return;
+    setShiftToggling(true);
+    try {
+      const res = await fetch("/api/driver/shift", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ passcode, onShift: !state.me.onShift }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setState((prev) =>
+          prev && prev.me
+            ? { ...prev, me: { ...prev.me, onShift: Boolean(data.driver?.onShift) } }
+            : prev,
+        );
+      }
+    } finally {
+      setShiftToggling(false);
+    }
   };
 
   const advance = async (id: string, status: Stop["status"]) => {
@@ -229,6 +253,34 @@ export default function DriverPage() {
           </div>
         </div>
       </div>
+
+      {state?.me && (
+        <div
+          className="card"
+          style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}
+        >
+          <div style={{ flex: 1, minWidth: 160 }}>
+            <div style={{ fontWeight: 700 }}>
+              {state.me.onShift ? "● On shift" : "○ Off shift"} · {state.me.name}
+            </div>
+            <div className="note">
+              {state.me.onShift
+                ? state.me.phone
+                  ? "You'll get SMS on every new pickup."
+                  : "On shift, but no phone number on file — no SMS."
+                : "Off shift — no SMS until you flip back on."}
+            </div>
+          </div>
+          <button
+            className={state.me.onShift ? "danger" : "ok"}
+            onClick={toggleShift}
+            disabled={shiftToggling}
+            style={{ width: "auto" }}
+          >
+            {state.me.onShift ? "Go off shift" : "Go on shift"}
+          </button>
+        </div>
+      )}
 
       <div className="card" style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
         <div style={{ flex: 1, minWidth: 160 }}>

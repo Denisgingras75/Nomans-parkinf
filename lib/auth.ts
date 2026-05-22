@@ -1,4 +1,5 @@
 import { getDrivers } from "./store";
+import type { Driver } from "./types";
 
 // Admin gate. ADMIN_PASSCODE must be set in env. There is no way to
 // rotate it from the UI by design — that env var is the bootstrap
@@ -22,6 +23,22 @@ export async function findDriver(
   const drivers = await getDrivers();
   for (const d of drivers) {
     if (safeEquals(p, d.passcode)) return { id: d.id, name: d.name };
+  }
+  return null;
+}
+
+// Same as findDriver but returns the full Driver record. Legacy
+// DRIVER_PASSCODE returns null here — there's no row to update for the
+// skeleton-key code, so endpoints that need to write a driver (e.g.
+// shift toggle) reject legacy auth.
+export async function findFullDriver(
+  passcode: string | null | undefined,
+): Promise<Driver | null> {
+  if (!passcode) return null;
+  const p = String(passcode);
+  const drivers = await getDrivers();
+  for (const d of drivers) {
+    if (safeEquals(p, d.passcode)) return d;
   }
   return null;
 }

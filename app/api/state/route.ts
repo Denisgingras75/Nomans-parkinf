@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSettings, getState } from "@/lib/store";
 import { etaMinutes } from "@/lib/geofence";
 import { isOnlineNow } from "@/lib/schedule";
-import { findDriver } from "@/lib/auth";
+import { findDriver, findFullDriver } from "@/lib/auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,12 +19,16 @@ export async function GET(req: NextRequest) {
   const stopId = url.searchParams.get("stopId");
   const driverParam = url.searchParams.get("driver");
 
-  const [settings, state, driver] = await Promise.all([
+  // Two lookups: findDriver also accepts the legacy DRIVER_PASSCODE env
+  // var (skeleton key for read access); findFullDriver only resolves
+  // real driver rows, which is what the "me" field below needs.
+  const [settings, state, driverRef, driverRow] = await Promise.all([
     getSettings(),
     getState(),
     findDriver(driverParam),
+    findFullDriver(driverParam),
   ]);
-  const isDriver = driver != null;
+  const isDriver = driverRef != null;
 
   const activeStops = state.stops.filter((s) => s.status === "queued" || s.status === "enroute");
 
@@ -53,11 +57,21 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  const me = driverRow
+    ? {
+        id: driverRow.id,
+        name: driverRow.name,
+        onShift: Boolean(driverRow.onShift),
+        phone: driverRow.phone ?? null,
+      }
+    : null;
+
   return NextResponse.json({
     shuttle: state.shuttle,
     stops: publicStops,
     nomans: settings.nomans,
     online: isOnlineNow(settings),
     yours,
+    me,
   });
 }
