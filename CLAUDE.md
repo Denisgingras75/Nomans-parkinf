@@ -45,6 +45,7 @@ PR or continued work on this one.
 | `/api/state` | GET | Public feed: shuttle position, active stops, online state, NoMans pin. `?stopId=` adds ETA. `?driver=<code>` unmasks names. | optional driver |
 | `/api/stops` | POST | Advance a stop's status (queued → enroute → picked-up → dropped-off / cancelled). Adjusts on-board count. | driver |
 | `/api/driver/location` | POST | Driver-phone GPS broadcast | driver |
+| `/api/driver/shift` | POST | Driver flips their own on/off shift | driver (real row only — legacy passcode rejected) |
 | `/api/bouncie/webhook` | POST | Bouncie OBD-II location push | secret (query `?secret=` or `X-Bouncie-Secret` header) |
 | `/api/admin/state` | GET | Settings + drivers + today's stops + SMS config status | admin |
 | `/api/admin/settings` | POST | Update nomans / bounds / capacity / online / alertsEnabled | admin |
@@ -64,14 +65,18 @@ app/
 components/
   Map.tsx                                 # Leaflet map (dynamic import, no SSR)
 lib/
-  types.ts                                # shared types (LatLng, Stop, Driver, Settings...)
-  store.ts                                # ALL persistence — KV or in-memory
-  auth.ts                                 # isAdmin + findDriver
+  types.ts                                # shared types (LatLng, Stop, Driver, Settings, ServiceHours...)
+  store.ts                                # ALL persistence — KV or in-memory (state, settings, drivers, ride archive)
+  auth.ts                                 # isAdmin + findDriver + findFullDriver
   geofence.ts                             # inBounds, distance, etaMinutes, defaults
+  schedule.ts                             # isOnlineNow, onlineReason, DEFAULT_HOURS, parseHHMM (America/New_York)
   sms.ts                                  # Twilio sender + phone normalization
+  chime.ts                                # createChimeContext + playChime (shared by /driver and /admin)
 public/
   nomans-logo.png                         # brand wordmark
 ```
+
+See `SETUP.md` for the owner runbook (Upstash, Twilio, Bouncie, NoMans pin, drivers).
 
 ---
 
@@ -122,13 +127,17 @@ Settings getter merges stored partials over defaults, so adding new Settings fie
 
 ## Punch list (future work, not blocked on owner)
 
-- Polygon geofence editor in `/admin`.
-- Service hours schedule (currently online/offline is manual).
+- Polygon geofence editor in `/admin` (bbox already works; only worth doing if you need surgical exclusions like the bridge to East Chop).
 - Multi-shuttle support (see decision #7).
-- Real routing (Mapbox Directions / OpenRouteService) instead of haversine + 18 mph ETA.
-- Driver "I'm stuck" or "out of service" affordances.
-- Persistent ride history beyond `state.stops`. Today's rides come from filtering `state.stops` by `createdAt >= start-of-day`; a full state wipe loses them. Add a separate `nomans:rides:archive` keyed by day if reporting matters.
-- Audible-chime test button in `/admin` so the owner can verify iOS audio without waiting for a real ping.
+- Real routing (Mapbox Directions / OpenRouteService) instead of haversine + 18 mph ETA — needs API key from owner.
+- Driver "I'm stuck" affordance (still en-route, just delayed — distinct from off-shift, which already exists).
+
+### Done
+
+- Service hours schedule — `Settings.hours` with America/New_York evaluation, kill-switch semantics; disabled by default.
+- Persistent ride archive — `nomans:rides:YYYY-MM-DD` survives state wipes; `/admin` "Today's rides" merges live + archive.
+- Driver off-shift toggle — `/driver` self-service via `POST /api/driver/shift`.
+- Audible-chime test button — Service status card in `/admin`. Audio extracted to `lib/chime.ts`.
 
 ---
 
