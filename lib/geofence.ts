@@ -1,7 +1,7 @@
 import type { LatLng } from "./types";
 
-// NoMans Land Brewing Co., Oak Bluffs, MA.
-// Update with the exact coordinate if surveyed on-site.
+// NoMans Restaurant, Oak Bluffs, MA (Martha's Vineyard, Dukes County).
+// Replace with the exact coordinate once surveyed at the restaurant door.
 export const NOMANS: LatLng = { lat: 41.4541, lng: -70.5605 };
 
 // Oak Bluffs operating bounding box. Pings outside this box are rejected and

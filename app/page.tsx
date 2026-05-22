@@ -124,13 +124,10 @@ export default function PassengerPage() {
 
   return (
     <main className="page">
-      <div className="brand">
-        <div className="brand-mark">N</div>
-        <div>
-          <div className="brand-name">NoMans Combi</div>
-          <div className="brand-sub">Oak Bluffs · NoMans Land Brewing shuttle</div>
-        </div>
-      </div>
+      <header className="brand">
+        <img src="/nomans-logo.png" alt="NoMans · Martha's Vineyard" className="brand-logo" />
+        <div className="brand-tag">Oak Bluffs Combi Shuttle</div>
+      </header>
 
       {stopId && yours ? (
         <div className="eta-card">

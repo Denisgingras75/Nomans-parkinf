@@ -99,7 +99,7 @@ export default function Map({ shuttle, nomans, me, stops = [], className }: Prop
       layersRef.current.push(marker);
     };
 
-    add(nomans, iconsRef.current.nomans, "NoMans Land Brewing");
+    add(nomans, iconsRef.current.nomans, "NoMans Restaurant");
     if (shuttle) add(shuttle, iconsRef.current.shuttle, "Combi shuttle");
     if (me) add(me, iconsRef.current.me, "You");
     for (const s of stops) {

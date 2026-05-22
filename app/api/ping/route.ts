@@ -57,7 +57,7 @@ export async function POST(req: NextRequest) {
       name,
       partySize,
       position: NOMANS,
-      note: "NoMans Land Brewing",
+      note: "NoMans Restaurant",
     });
     return NextResponse.json({ ok: true, stopId: pickup.id });
   }

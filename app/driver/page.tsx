@@ -73,13 +73,10 @@ export default function DriverPage() {
   if (!authed) {
     return (
       <main className="page">
-        <div className="brand">
-          <div className="brand-mark">N</div>
-          <div>
-            <div className="brand-name">Driver dashboard</div>
-            <div className="brand-sub">NoMans combi</div>
-          </div>
-        </div>
+        <header className="brand">
+          <img src="/nomans-logo.png" alt="NoMans" className="brand-logo" />
+          <div className="brand-tag">Driver Dashboard</div>
+        </header>
         <div className="card">
           <label htmlFor="pass">Driver passcode</label>
           <input
@@ -112,19 +109,17 @@ export default function DriverPage() {
 
   return (
     <main className="driver-page">
-      <div className="brand">
-        <div className="brand-mark">N</div>
-        <div>
-          <div className="brand-name">Driver dashboard</div>
-          <div className="brand-sub">
-            {updatedAgo == null
-              ? "No Bouncie signal yet"
-              : updatedAgo < 60
-              ? `Position fresh (${updatedAgo}s ago)`
-              : `Stale signal — ${Math.round(updatedAgo / 60)} min old`}
-          </div>
+      <header className="brand">
+        <img src="/nomans-logo.png" alt="NoMans" className="brand-logo" />
+        <div className="brand-tag">
+          Driver Dashboard ·{" "}
+          {updatedAgo == null
+            ? "no signal yet"
+            : updatedAgo < 60
+            ? `position fresh (${updatedAgo}s)`
+            : `stale (${Math.round(updatedAgo / 60)} min)`}
         </div>
-      </div>
+      </header>
 
       <div className="card">
         <div className="kpi">

@@ -4,7 +4,7 @@ import "leaflet/dist/leaflet.css";
 
 export const metadata: Metadata = {
   title: "NoMans Combi — Oak Bluffs Shuttle",
-  description: "Ping the NoMans combi shuttle for a ride to or from NoMans Land Brewing, Oak Bluffs.",
+  description: "Ping the NoMans combi shuttle for a ride to or from NoMans Restaurant, Oak Bluffs.",
 };
 
 export const viewport: Viewport = {
