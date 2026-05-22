@@ -19,6 +19,7 @@ import { DEFAULT_HOURS } from "./schedule";
 const KV_STATE_KEY = "nomans:state:v1";
 const KV_SETTINGS_KEY = "nomans:settings:v1";
 const KV_DRIVERS_KEY = "nomans:drivers:v1";
+const KV_RIDES_PREFIX = "nomans:rides:"; // suffix: YYYY-MM-DD (Eastern)
 
 const useKV = Boolean(process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN);
 
@@ -26,6 +27,7 @@ const memory = globalThis as unknown as {
   __nomansState?: AppState;
   __nomansSettings?: Settings;
   __nomansDrivers?: Driver[];
+  __nomansRides?: Record<string, Stop[]>;
 };
 
 const DEFAULT_SETTINGS: Settings = {
@@ -114,6 +116,9 @@ export async function setStopStatus(id: string, status: StopStatus): Promise<Sto
     state.shuttle.onboard = Math.max(0, state.shuttle.onboard - stop.partySize);
   }
   await writeState(state);
+  if (status === "picked-up" || status === "dropped-off" || status === "cancelled") {
+    await appendToRideArchive(stop);
+  }
   return stop;
 }
 
@@ -201,6 +206,40 @@ export async function removeDriver(id: string): Promise<boolean> {
   if (useKV) await kvSet(KV_DRIVERS_KEY, next);
   else memory.__nomansDrivers = next;
   return true;
+}
+
+// ---------- Ride archive (per-day, survives state wipes) ----------
+
+// Day boundary is Eastern so a shift that crosses midnight UTC still
+// counts as one workday.
+export function rideDayKey(now: Date = new Date()): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(now);
+}
+
+export async function getRideArchive(day: string = rideDayKey()): Promise<Stop[]> {
+  if (useKV) return (await kvGet<Stop[]>(`${KV_RIDES_PREFIX}${day}`)) ?? [];
+  return memory.__nomansRides?.[day] ?? [];
+}
+
+async function appendToRideArchive(stop: Stop): Promise<void> {
+  const day = rideDayKey(new Date(stop.createdAt));
+  const key = `${KV_RIDES_PREFIX}${day}`;
+  // Replace by id so a stop moving through multiple terminal statuses
+  // (e.g. picked-up → dropped-off) ends up with only the latest snapshot.
+  if (useKV) {
+    const current = (await kvGet<Stop[]>(key)) ?? [];
+    const next = [...current.filter((s) => s.id !== stop.id), stop];
+    await kvSet(key, next);
+  } else {
+    memory.__nomansRides ??= {};
+    const current = memory.__nomansRides[day] ?? [];
+    memory.__nomansRides[day] = [...current.filter((s) => s.id !== stop.id), stop];
+  }
 }
 
 // ---------- helpers ----------
