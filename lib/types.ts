@@ -1,5 +1,21 @@
 export type LatLng = { lat: number; lng: number };
 
+export type BBox = { south: number; north: number; west: number; east: number };
+
+export type Settings = {
+  nomans: LatLng;
+  bounds: BBox;
+  capacity: number;
+  online: boolean;
+};
+
+export type Driver = {
+  id: string;
+  name: string;
+  passcode: string;
+  createdAt: number;
+};
+
 export type ShuttleState = {
   position: LatLng | null;
   heading: number | null;

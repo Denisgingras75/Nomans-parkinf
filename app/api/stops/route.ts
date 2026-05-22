@@ -1,19 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { setStopStatus } from "@/lib/store";
+import { findDriver } from "@/lib/auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 // Driver-only: advance a stop's status.
-// Body: { id: string, status: "enroute" | "picked-up" | "dropped-off" | "cancelled", passcode: string }
+// Body: { id, status: "enroute"|"picked-up"|"dropped-off"|"cancelled", passcode }
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null);
   if (!body || typeof body !== "object") {
     return NextResponse.json({ error: "invalid payload" }, { status: 400 });
   }
 
-  const expected = process.env.DRIVER_PASSCODE;
-  if (!expected || body.passcode !== expected) {
+  const driver = await findDriver(body.passcode);
+  if (!driver) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 

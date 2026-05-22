@@ -1,24 +1,20 @@
-import type { LatLng } from "./types";
+import type { BBox, LatLng } from "./types";
 
-// NoMans Restaurant, Oak Bluffs, MA (Martha's Vineyard, Dukes County).
-// Replace with the exact coordinate once surveyed at the restaurant door.
-export const NOMANS: LatLng = { lat: 41.4541, lng: -70.5605 };
-
-// Oak Bluffs operating bounding box. Pings outside this box are rejected and
-// the user is told to walk to the nearest in-zone corner. Loose enough to
-// cover the ferry terminal, Circuit Ave, Ocean Park, and the inkwell.
-const BOUNDS = {
-  south: 41.4380,
-  north: 41.4720,
-  west: -70.5780,
-  east: -70.5460,
+// Defaults used to seed Settings on first install. After that, the
+// admin can edit these from /admin and the values move into KV.
+export const DEFAULT_NOMANS: LatLng = { lat: 41.4541, lng: -70.5605 };
+export const DEFAULT_BOUNDS: BBox = {
+  south: 41.438,
+  north: 41.472,
+  west: -70.578,
+  east: -70.546,
 };
 
-export function inOakBluffs({ lat, lng }: LatLng): boolean {
-  return lat >= BOUNDS.south && lat <= BOUNDS.north && lng >= BOUNDS.west && lng <= BOUNDS.east;
+export function inBounds(p: LatLng, b: BBox): boolean {
+  return p.lat >= b.south && p.lat <= b.north && p.lng >= b.west && p.lng <= b.east;
 }
 
-// Haversine distance in miles. Cheap enough for a handful of stops.
+// Haversine distance in miles.
 export function distanceMiles(a: LatLng, b: LatLng): number {
   const R = 3958.8;
   const toRad = (d: number) => (d * Math.PI) / 180;

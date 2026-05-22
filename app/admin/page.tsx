@@ -1,0 +1,511 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import type { BBox, Driver, LatLng, Settings, Stop } from "@/lib/types";
+
+type AdminState = {
+  settings: Settings;
+  drivers: Driver[];
+  today: Stop[];
+  legacyDriverEnabled: boolean;
+  shuttle: { onboard: number; capacity: number; position: LatLng | null; updatedAt: number | null };
+};
+
+export default function AdminPage() {
+  const [passcode, setPasscode] = useState("");
+  const [authed, setAuthed] = useState(false);
+  const [data, setData] = useState<AdminState | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [savingSettings, setSavingSettings] = useState(false);
+  const [newDriverName, setNewDriverName] = useState("");
+  const [addingDriver, setAddingDriver] = useState(false);
+
+  useEffect(() => {
+    const saved = localStorage.getItem("nomans.adminPass");
+    if (saved) {
+      setPasscode(saved);
+      setAuthed(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!authed) return;
+    let alive = true;
+    const fetchAll = async () => {
+      try {
+        const res = await fetch("/api/admin/state", {
+          headers: { "x-admin-passcode": passcode },
+          cache: "no-store",
+        });
+        if (res.status === 401) {
+          if (alive) {
+            setAuthed(false);
+            localStorage.removeItem("nomans.adminPass");
+            setError("Wrong passcode.");
+          }
+          return;
+        }
+        if (!res.ok) return;
+        const d = (await res.json()) as AdminState;
+        if (alive) setData(d);
+      } catch {
+        /* transient */
+      }
+    };
+    fetchAll();
+    const t = setInterval(fetchAll, 8000);
+    return () => {
+      alive = false;
+      clearInterval(t);
+    };
+  }, [authed, passcode]);
+
+  const unlock = () => {
+    localStorage.setItem("nomans.adminPass", passcode);
+    setAuthed(true);
+    setError(null);
+  };
+
+  const lock = () => {
+    localStorage.removeItem("nomans.adminPass");
+    setAuthed(false);
+    setPasscode("");
+    setData(null);
+  };
+
+  const saveSettings = async (patch: Partial<Settings>) => {
+    setSavingSettings(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/admin/settings", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-admin-passcode": passcode },
+        body: JSON.stringify(patch),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setError(json.error ?? "Could not save");
+      } else if (data) {
+        setData({ ...data, settings: json.settings });
+      }
+    } finally {
+      setSavingSettings(false);
+    }
+  };
+
+  const addDriver = async () => {
+    const name = newDriverName.trim();
+    if (!name) return;
+    setAddingDriver(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/admin/drivers", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-admin-passcode": passcode },
+        body: JSON.stringify({ name }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setError(json.error ?? "Could not add driver");
+      } else if (data) {
+        setData({ ...data, drivers: [...data.drivers, json.driver] });
+        setNewDriverName("");
+      }
+    } finally {
+      setAddingDriver(false);
+    }
+  };
+
+  const revokeDriver = async (id: string) => {
+    if (!confirm("Revoke this driver's code? They won't be able to log in anymore.")) return;
+    const res = await fetch(`/api/admin/drivers?id=${encodeURIComponent(id)}`, {
+      method: "DELETE",
+      headers: { "x-admin-passcode": passcode },
+    });
+    if (!res.ok) {
+      const json = await res.json().catch(() => ({}));
+      setError(json.error ?? "Revoke failed");
+      return;
+    }
+    if (data) setData({ ...data, drivers: data.drivers.filter((d) => d.id !== id) });
+  };
+
+  if (!authed) {
+    return (
+      <main className="page">
+        <header className="brand">
+          <img src="/nomans-logo.png" alt="NoMans" className="brand-logo" />
+          <div className="brand-tag">Admin</div>
+        </header>
+        <div className="card">
+          <label htmlFor="pass">Admin passcode</label>
+          <input
+            id="pass"
+            type="password"
+            value={passcode}
+            onChange={(e) => setPasscode(e.target.value)}
+            placeholder="Set ADMIN_PASSCODE in Vercel env"
+          />
+          <button style={{ marginTop: 12 }} onClick={unlock}>
+            Unlock
+          </button>
+          {error && <div className="error">{error}</div>}
+        </div>
+      </main>
+    );
+  }
+
+  if (!data) {
+    return (
+      <main className="page">
+        <div className="card note">Loading…</div>
+      </main>
+    );
+  }
+
+  const { settings, drivers, today, legacyDriverEnabled, shuttle } = data;
+  const updatedAgo =
+    shuttle.updatedAt != null ? Math.round((Date.now() - shuttle.updatedAt) / 1000) : null;
+
+  return (
+    <main className="page">
+      <header className="brand">
+        <img src="/nomans-logo.png" alt="NoMans" className="brand-logo" />
+        <div className="brand-tag">Admin</div>
+      </header>
+
+      {error && (
+        <div className="card" style={{ borderColor: "var(--danger)" }}>
+          <div className="error">{error}</div>
+        </div>
+      )}
+
+      {/* Service status */}
+      <div className="card">
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 18 }}>
+              Service is{" "}
+              <span style={{ color: settings.online ? "var(--ok)" : "var(--danger)" }}>
+                {settings.online ? "ONLINE" : "OFFLINE"}
+              </span>
+            </div>
+            <div className="note">
+              {settings.online
+                ? "Guests can ping the combi."
+                : "Pings are blocked. Guests see an off-duty message."}
+            </div>
+          </div>
+          <button
+            className={settings.online ? "danger" : "ok"}
+            style={{ width: "auto" }}
+            disabled={savingSettings}
+            onClick={() => saveSettings({ online: !settings.online })}
+          >
+            {settings.online ? "Take offline" : "Go online"}
+          </button>
+        </div>
+        <hr style={{ border: "none", borderTop: "1px solid var(--border)", margin: "14px 0" }} />
+        <div className="kpi">
+          <div>
+            <div className="num">{shuttle.onboard}/{shuttle.capacity}</div>
+            <div className="lbl">On board now</div>
+          </div>
+          <div>
+            <div className="num">{today.length}</div>
+            <div className="lbl">Stops today</div>
+          </div>
+          <div>
+            <div className="num">
+              {updatedAgo == null ? "—" : updatedAgo < 60 ? `${updatedAgo}s` : `${Math.round(updatedAgo / 60)}m`}
+            </div>
+            <div className="lbl">Last GPS</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Drivers */}
+      <div className="card">
+        <h2 style={{ margin: "0 0 8px" }}>Drivers</h2>
+        {drivers.length === 0 && (
+          <div className="note" style={{ marginBottom: 12 }}>
+            {legacyDriverEnabled
+              ? "No drivers added yet. Drivers can log in with the legacy DRIVER_PASSCODE env var until you add one here."
+              : "No drivers yet. Add one below — they'll use the code shown to log in at /driver."}
+          </div>
+        )}
+        {drivers.map((d) => (
+          <div key={d.id} className="stop" style={{ marginBottom: 8 }}>
+            <div className="stop-head">
+              <div>
+                <strong>{d.name}</strong>{" "}
+                <span className="mono" style={{ color: "var(--accent)", fontFamily: "ui-monospace, Menlo, monospace" }}>
+                  {d.passcode}
+                </span>
+              </div>
+              <button
+                className="danger"
+                style={{ width: "auto", padding: "6px 10px", fontSize: 13 }}
+                onClick={() => revokeDriver(d.id)}
+              >
+                Revoke
+              </button>
+            </div>
+            <div className="note">
+              Added {new Date(d.createdAt).toLocaleDateString()} · Text them the code to log in.
+            </div>
+          </div>
+        ))}
+        <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+          <input
+            placeholder="New driver name"
+            value={newDriverName}
+            onChange={(e) => setNewDriverName(e.target.value)}
+          />
+          <button onClick={addDriver} disabled={addingDriver || !newDriverName.trim()} style={{ width: "auto" }}>
+            Add
+          </button>
+        </div>
+      </div>
+
+      {/* NoMans location */}
+      <NoMansEditor
+        current={settings.nomans}
+        saving={savingSettings}
+        onSave={(nomans) => saveSettings({ nomans })}
+      />
+
+      {/* Service area */}
+      <BoundsEditor
+        current={settings.bounds}
+        saving={savingSettings}
+        onSave={(bounds) => saveSettings({ bounds })}
+      />
+
+      {/* Capacity */}
+      <CapacityEditor
+        current={settings.capacity}
+        saving={savingSettings}
+        onSave={(capacity) => saveSettings({ capacity })}
+      />
+
+      {/* Today */}
+      <div className="card">
+        <h2 style={{ margin: "0 0 8px" }}>Today's rides</h2>
+        {today.length === 0 && <div className="note">Nothing yet today.</div>}
+        {today.map((s) => (
+          <div key={s.id} className="stop" style={{ marginBottom: 6 }}>
+            <div className="stop-head">
+              <div>
+                <span className={`tag ${s.kind}`}>{s.kind}</span>{" "}
+                <strong>{s.name ?? "Guest"}</strong>{" "}
+                <span className="note">× {s.partySize}</span>
+              </div>
+              <span className={`tag ${s.status === "dropped-off" ? "enroute" : "queued"}`}>
+                {s.status}
+              </span>
+            </div>
+            <div className="note">
+              {new Date(s.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+              {s.note ? ` · ${s.note}` : ""}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="card" style={{ textAlign: "center" }}>
+        <button className="secondary" style={{ width: "auto" }} onClick={lock}>
+          Lock admin
+        </button>
+      </div>
+    </main>
+  );
+}
+
+function NoMansEditor({
+  current,
+  saving,
+  onSave,
+}: {
+  current: LatLng;
+  saving: boolean;
+  onSave: (n: LatLng) => void;
+}) {
+  const [lat, setLat] = useState(current.lat.toFixed(6));
+  const [lng, setLng] = useState(current.lng.toFixed(6));
+  const [locating, setLocating] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    setLat(current.lat.toFixed(6));
+    setLng(current.lng.toFixed(6));
+  }, [current.lat, current.lng]);
+
+  const useHere = () => {
+    if (!navigator.geolocation) {
+      setErr("This browser can't share location.");
+      return;
+    }
+    setLocating(true);
+    setErr(null);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setLat(pos.coords.latitude.toFixed(6));
+        setLng(pos.coords.longitude.toFixed(6));
+        setLocating(false);
+      },
+      (e) => {
+        setErr(e.message || "Couldn't get location");
+        setLocating(false);
+      },
+      { enableHighAccuracy: true, timeout: 10000 },
+    );
+  };
+
+  const save = () => {
+    const la = Number(lat);
+    const ln = Number(lng);
+    if (!Number.isFinite(la) || !Number.isFinite(ln)) {
+      setErr("Lat/lng must be numbers");
+      return;
+    }
+    onSave({ lat: la, lng: ln });
+  };
+
+  return (
+    <div className="card">
+      <h2 style={{ margin: "0 0 4px" }}>NoMans pin</h2>
+      <div className="note" style={{ marginBottom: 12 }}>
+        Stand at the front door and tap "Use my current location," or paste a lat/lng from Google Maps.
+      </div>
+      <div className="row">
+        <div>
+          <label>Lat</label>
+          <input value={lat} onChange={(e) => setLat(e.target.value)} />
+        </div>
+        <div>
+          <label>Lng</label>
+          <input value={lng} onChange={(e) => setLng(e.target.value)} />
+        </div>
+      </div>
+      <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+        <button className="secondary" onClick={useHere} disabled={locating} style={{ width: "auto" }}>
+          {locating ? "Locating…" : "Use my current location"}
+        </button>
+        <button onClick={save} disabled={saving} style={{ width: "auto" }}>
+          Save pin
+        </button>
+      </div>
+      {err && <div className="error">{err}</div>}
+    </div>
+  );
+}
+
+function BoundsEditor({
+  current,
+  saving,
+  onSave,
+}: {
+  current: BBox;
+  saving: boolean;
+  onSave: (b: BBox) => void;
+}) {
+  const [south, setSouth] = useState(current.south.toString());
+  const [north, setNorth] = useState(current.north.toString());
+  const [west, setWest] = useState(current.west.toString());
+  const [east, setEast] = useState(current.east.toString());
+
+  useEffect(() => {
+    setSouth(current.south.toString());
+    setNorth(current.north.toString());
+    setWest(current.west.toString());
+    setEast(current.east.toString());
+  }, [current.south, current.north, current.west, current.east]);
+
+  const save = () => {
+    onSave({
+      south: Number(south),
+      north: Number(north),
+      west: Number(west),
+      east: Number(east),
+    });
+  };
+
+  const resetDefault = () => {
+    setSouth("41.438");
+    setNorth("41.472");
+    setWest("-70.578");
+    setEast("-70.546");
+  };
+
+  return (
+    <div className="card">
+      <h2 style={{ margin: "0 0 4px" }}>Service area</h2>
+      <div className="note" style={{ marginBottom: 12 }}>
+        Bounding box for valid pickup &amp; dropoff locations. Pings outside the box are rejected.
+      </div>
+      <div className="row">
+        <div>
+          <label>North (lat)</label>
+          <input value={north} onChange={(e) => setNorth(e.target.value)} />
+        </div>
+        <div>
+          <label>South (lat)</label>
+          <input value={south} onChange={(e) => setSouth(e.target.value)} />
+        </div>
+      </div>
+      <div className="row" style={{ marginTop: 8 }}>
+        <div>
+          <label>West (lng)</label>
+          <input value={west} onChange={(e) => setWest(e.target.value)} />
+        </div>
+        <div>
+          <label>East (lng)</label>
+          <input value={east} onChange={(e) => setEast(e.target.value)} />
+        </div>
+      </div>
+      <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+        <button className="secondary" style={{ width: "auto" }} onClick={resetDefault}>
+          Reset to default
+        </button>
+        <button onClick={save} disabled={saving} style={{ width: "auto" }}>
+          Save area
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function CapacityEditor({
+  current,
+  saving,
+  onSave,
+}: {
+  current: number;
+  saving: boolean;
+  onSave: (c: number) => void;
+}) {
+  const [value, setValue] = useState(current);
+  useEffect(() => setValue(current), [current]);
+  return (
+    <div className="card">
+      <h2 style={{ margin: "0 0 4px" }}>Capacity</h2>
+      <div className="note" style={{ marginBottom: 12 }}>
+        Maximum guests on board at once. New pings are blocked when the combi is full.
+      </div>
+      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <input
+          type="number"
+          min={1}
+          max={32}
+          value={value}
+          onChange={(e) => setValue(Number(e.target.value))}
+          style={{ maxWidth: 100 }}
+        />
+        <button onClick={() => onSave(value)} disabled={saving} style={{ width: "auto" }}>
+          Save capacity
+        </button>
+      </div>
+    </div>
+  );
+}

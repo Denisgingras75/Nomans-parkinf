@@ -10,6 +10,7 @@ type StateResponse = {
   shuttle: { position: LatLng | null; updatedAt: number | null; onboard: number; capacity: number };
   stops: { id: string; kind: "pickup" | "dropoff"; position: LatLng; status: string }[];
   nomans: LatLng;
+  online: boolean;
   yours: { etaMinutes: number | null; position: number; status: string } | null;
 };
 
@@ -129,6 +130,17 @@ export default function PassengerPage() {
         <div className="brand-tag">Oak Bluffs Combi Shuttle</div>
       </header>
 
+      {state && !state.online && !stopId && (
+        <div className="card" style={{ borderColor: "var(--danger)" }}>
+          <div style={{ fontWeight: 700, fontSize: 18, color: "var(--danger)" }}>
+            The combi is off duty
+          </div>
+          <div className="note" style={{ marginTop: 6 }}>
+            Please check back during service hours.
+          </div>
+        </div>
+      )}
+
       {stopId && yours ? (
         <div className="eta-card">
           <div className="label">{yours.status === "picked-up" ? "On board" : "Combi inbound"}</div>
@@ -143,7 +155,7 @@ export default function PassengerPage() {
         </div>
       ) : null}
 
-      {!stopId && (
+      {!stopId && state?.online !== false && (
         <div className="card">
           <h1>Where to?</h1>
           <p className="note">Heavy traffic? Skip the walk. Ping the combi.</p>
