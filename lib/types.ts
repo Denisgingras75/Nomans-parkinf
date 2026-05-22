@@ -7,12 +7,15 @@ export type Settings = {
   bounds: BBox;
   capacity: number;
   online: boolean;
+  alertsEnabled: boolean;
 };
 
 export type Driver = {
   id: string;
   name: string;
   passcode: string;
+  phone?: string | null;
+  onShift?: boolean;
   createdAt: number;
 };
 

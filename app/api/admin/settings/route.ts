@@ -51,6 +51,7 @@ export async function POST(req: NextRequest) {
   }
 
   if (body.online !== undefined) patch.online = Boolean(body.online);
+  if (body.alertsEnabled !== undefined) patch.alertsEnabled = Boolean(body.alertsEnabled);
 
   const updated = await updateSettings(patch);
   return NextResponse.json({ ok: true, settings: updated });

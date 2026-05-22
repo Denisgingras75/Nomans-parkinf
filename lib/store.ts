@@ -32,6 +32,7 @@ const DEFAULT_SETTINGS: Settings = {
   bounds: DEFAULT_BOUNDS,
   capacity: 8,
   online: true,
+  alertsEnabled: true,
 };
 
 function initState(): AppState {
@@ -125,12 +126,15 @@ export async function remainingCapacity(): Promise<number> {
 // ---------- Settings ----------
 
 export async function getSettings(): Promise<Settings> {
+  // Merge stored partial settings on top of defaults so fields added in
+  // later versions (e.g. alertsEnabled) get sensible defaults for
+  // installs that have already written settings to KV.
   if (useKV) {
-    const s = await kvGet<Settings>(KV_SETTINGS_KEY);
-    return s ?? DEFAULT_SETTINGS;
+    const stored = await kvGet<Partial<Settings>>(KV_SETTINGS_KEY);
+    return { ...DEFAULT_SETTINGS, ...(stored ?? {}) };
   }
   if (!memory.__nomansSettings) memory.__nomansSettings = { ...DEFAULT_SETTINGS };
-  return memory.__nomansSettings;
+  return { ...DEFAULT_SETTINGS, ...memory.__nomansSettings };
 }
 
 export async function updateSettings(patch: Partial<Settings>): Promise<Settings> {
@@ -157,15 +161,32 @@ export async function getDrivers(): Promise<Driver[]> {
   return memory.__nomansDrivers ?? [];
 }
 
-export async function addDriver(name: string): Promise<Driver> {
+export async function addDriver(input: { name: string; phone?: string | null }): Promise<Driver> {
   const drivers = await getDrivers();
   const driver: Driver = {
     id: cryptoRandomId(),
-    name: name.trim().slice(0, 40) || "Driver",
+    name: input.name.trim().slice(0, 40) || "Driver",
     passcode: generateDriverCode(),
+    phone: input.phone ?? null,
+    onShift: false,
     createdAt: Date.now(),
   };
   drivers.push(driver);
+  if (useKV) await kvSet(KV_DRIVERS_KEY, drivers);
+  else memory.__nomansDrivers = drivers;
+  return driver;
+}
+
+export async function updateDriver(
+  id: string,
+  patch: Partial<Pick<Driver, "phone" | "onShift" | "name">>,
+): Promise<Driver | null> {
+  const drivers = await getDrivers();
+  const driver = drivers.find((d) => d.id === id);
+  if (!driver) return null;
+  if (patch.name !== undefined) driver.name = patch.name.trim().slice(0, 40) || driver.name;
+  if (patch.phone !== undefined) driver.phone = patch.phone || null;
+  if (patch.onShift !== undefined) driver.onShift = Boolean(patch.onShift);
   if (useKV) await kvSet(KV_DRIVERS_KEY, drivers);
   else memory.__nomansDrivers = drivers;
   return driver;

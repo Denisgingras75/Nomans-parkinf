@@ -8,6 +8,7 @@ type AdminState = {
   drivers: Driver[];
   today: Stop[];
   legacyDriverEnabled: boolean;
+  smsConfigured: boolean;
   shuttle: { onboard: number; capacity: number; position: LatLng | null; updatedAt: number | null };
 };
 
@@ -18,7 +19,10 @@ export default function AdminPage() {
   const [error, setError] = useState<string | null>(null);
   const [savingSettings, setSavingSettings] = useState(false);
   const [newDriverName, setNewDriverName] = useState("");
+  const [newDriverPhone, setNewDriverPhone] = useState("");
   const [addingDriver, setAddingDriver] = useState(false);
+  const [editingPhoneFor, setEditingPhoneFor] = useState<string | null>(null);
+  const [phoneDraft, setPhoneDraft] = useState("");
 
   useEffect(() => {
     const saved = localStorage.getItem("nomans.adminPass");
@@ -102,7 +106,7 @@ export default function AdminPage() {
       const res = await fetch("/api/admin/drivers", {
         method: "POST",
         headers: { "content-type": "application/json", "x-admin-passcode": passcode },
-        body: JSON.stringify({ name }),
+        body: JSON.stringify({ name, phone: newDriverPhone.trim() || undefined }),
       });
       const json = await res.json();
       if (!res.ok) {
@@ -110,10 +114,42 @@ export default function AdminPage() {
       } else if (data) {
         setData({ ...data, drivers: [...data.drivers, json.driver] });
         setNewDriverName("");
+        setNewDriverPhone("");
       }
     } finally {
       setAddingDriver(false);
     }
+  };
+
+  const patchDriver = async (id: string, patch: Partial<Driver>) => {
+    setError(null);
+    const res = await fetch("/api/admin/drivers", {
+      method: "PATCH",
+      headers: { "content-type": "application/json", "x-admin-passcode": passcode },
+      body: JSON.stringify({ id, ...patch }),
+    });
+    const json = await res.json();
+    if (!res.ok) {
+      setError(json.error ?? "Update failed");
+      return;
+    }
+    if (data) {
+      setData({
+        ...data,
+        drivers: data.drivers.map((d) => (d.id === id ? json.driver : d)),
+      });
+    }
+  };
+
+  const startEditPhone = (driver: Driver) => {
+    setEditingPhoneFor(driver.id);
+    setPhoneDraft(driver.phone ?? "");
+  };
+
+  const saveEditPhone = async (id: string) => {
+    await patchDriver(id, { phone: phoneDraft.trim() || null });
+    setEditingPhoneFor(null);
+    setPhoneDraft("");
   };
 
   const revokeDriver = async (id: string) => {
@@ -163,7 +199,7 @@ export default function AdminPage() {
     );
   }
 
-  const { settings, drivers, today, legacyDriverEnabled, shuttle } = data;
+  const { settings, drivers, today, legacyDriverEnabled, smsConfigured, shuttle } = data;
   const updatedAgo =
     shuttle.updatedAt != null ? Math.round((Date.now() - shuttle.updatedAt) / 1000) : null;
 
@@ -222,6 +258,27 @@ export default function AdminPage() {
             <div className="lbl">Last GPS</div>
           </div>
         </div>
+        <hr style={{ border: "none", borderTop: "1px solid var(--border)", margin: "14px 0" }} />
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+          <div>
+            <div style={{ fontWeight: 700 }}>SMS alerts to on-shift drivers</div>
+            <div className="note">
+              {!smsConfigured
+                ? "Set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and TWILIO_FROM in Vercel env vars to enable."
+                : settings.alertsEnabled
+                ? "Drivers marked on-shift with a phone number get texted on each new pickup."
+                : "Pings won't text drivers until you re-enable this."}
+            </div>
+          </div>
+          <button
+            className={settings.alertsEnabled ? "danger" : "ok"}
+            style={{ width: "auto" }}
+            disabled={savingSettings || !smsConfigured}
+            onClick={() => saveSettings({ alertsEnabled: !settings.alertsEnabled })}
+          >
+            {settings.alertsEnabled ? "Pause alerts" : "Enable alerts"}
+          </button>
+        </div>
       </div>
 
       {/* Drivers */}
@@ -235,11 +292,11 @@ export default function AdminPage() {
           </div>
         )}
         {drivers.map((d) => (
-          <div key={d.id} className="stop" style={{ marginBottom: 8 }}>
+          <div key={d.id} className="stop" style={{ marginBottom: 10 }}>
             <div className="stop-head">
               <div>
                 <strong>{d.name}</strong>{" "}
-                <span className="mono" style={{ color: "var(--accent)", fontFamily: "ui-monospace, Menlo, monospace" }}>
+                <span style={{ color: "var(--accent)", fontFamily: "ui-monospace, Menlo, monospace" }}>
                   {d.passcode}
                 </span>
               </div>
@@ -251,21 +308,78 @@ export default function AdminPage() {
                 Revoke
               </button>
             </div>
-            <div className="note">
-              Added {new Date(d.createdAt).toLocaleDateString()} · Text them the code to log in.
+
+            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginTop: 4 }}>
+              <button
+                className={d.onShift ? "ok" : "secondary"}
+                style={{ width: "auto", padding: "6px 12px", fontSize: 13 }}
+                onClick={() => patchDriver(d.id, { onShift: !d.onShift })}
+              >
+                {d.onShift ? "● On shift" : "○ Off shift"}
+              </button>
+
+              {editingPhoneFor === d.id ? (
+                <span style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                  <input
+                    value={phoneDraft}
+                    onChange={(e) => setPhoneDraft(e.target.value)}
+                    placeholder="508-555-1234"
+                    style={{ maxWidth: 160 }}
+                  />
+                  <button
+                    style={{ width: "auto", padding: "6px 10px", fontSize: 13 }}
+                    onClick={() => saveEditPhone(d.id)}
+                  >
+                    Save
+                  </button>
+                  <button
+                    className="secondary"
+                    style={{ width: "auto", padding: "6px 10px", fontSize: 13 }}
+                    onClick={() => setEditingPhoneFor(null)}
+                  >
+                    Cancel
+                  </button>
+                </span>
+              ) : (
+                <button
+                  className="secondary"
+                  style={{ width: "auto", padding: "6px 12px", fontSize: 13 }}
+                  onClick={() => startEditPhone(d)}
+                  title={d.phone ?? "No phone — won't receive SMS alerts"}
+                >
+                  {d.phone ? `📱 ${d.phone}` : "+ Add phone"}
+                </button>
+              )}
+
+              {d.onShift && smsConfigured && settings.alertsEnabled && d.phone && (
+                <span className="note" style={{ color: "var(--ok)" }}>🔔 alerts on</span>
+              )}
+            </div>
+
+            <div className="note" style={{ marginTop: 4 }}>
+              Added {new Date(d.createdAt).toLocaleDateString()} · Text them the code to log in at /driver.
             </div>
           </div>
         ))}
-        <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+        <div className="row" style={{ marginTop: 8 }}>
           <input
-            placeholder="New driver name"
+            placeholder="Driver name"
             value={newDriverName}
             onChange={(e) => setNewDriverName(e.target.value)}
           />
-          <button onClick={addDriver} disabled={addingDriver || !newDriverName.trim()} style={{ width: "auto" }}>
-            Add
-          </button>
+          <input
+            placeholder="Phone (optional)"
+            value={newDriverPhone}
+            onChange={(e) => setNewDriverPhone(e.target.value)}
+          />
         </div>
+        <button
+          style={{ marginTop: 8 }}
+          onClick={addDriver}
+          disabled={addingDriver || !newDriverName.trim()}
+        >
+          Add driver
+        </button>
       </div>
 
       {/* NoMans location */}

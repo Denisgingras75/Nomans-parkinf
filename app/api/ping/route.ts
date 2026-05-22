@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { addStop, getSettings, remainingCapacity } from "@/lib/store";
+import { addStop, getDrivers, getSettings, remainingCapacity } from "@/lib/store";
 import { inBounds } from "@/lib/geofence";
+import { notifyOnShiftDrivers } from "@/lib/sms";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -49,6 +50,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  let pickupId: string;
   if (direction === "to-nomans") {
     const pickup = await addStop({
       kind: "pickup",
@@ -64,24 +66,39 @@ export async function POST(req: NextRequest) {
       position: settings.nomans,
       note: "NoMans Restaurant",
     });
-    return NextResponse.json({ ok: true, stopId: pickup.id });
+    pickupId = pickup.id;
+  } else {
+    const pickup = await addStop({
+      kind: "pickup",
+      name,
+      partySize,
+      position: settings.nomans,
+      note: "NoMans Restaurant",
+    });
+    await addStop({
+      kind: "dropoff",
+      name,
+      partySize,
+      position: { lat, lng },
+      note,
+    });
+    pickupId = pickup.id;
   }
 
-  const pickup = await addStop({
-    kind: "pickup",
-    name,
-    partySize,
-    position: settings.nomans,
-    note: "NoMans Restaurant",
-  });
-  await addStop({
-    kind: "dropoff",
-    name,
-    partySize,
-    position: { lat, lng },
-    note,
-  });
-  return NextResponse.json({ ok: true, stopId: pickup.id });
+  if (settings.alertsEnabled) {
+    const origin = new URL(req.url).origin;
+    const where = direction === "to-nomans" ? "TO NoMans" : "FROM NoMans";
+    const noteTail = note ? ` Note: "${note.slice(0, 80)}"` : "";
+    const body = `🚐 NoMans Combi: ${where}, ${name} (party of ${partySize}).${noteTail} Open ${origin}/driver`;
+    const drivers = await getDrivers();
+    // Awaited so we know the dispatch finished before the serverless
+    // instance terminates. Each send has a 2.5s timeout, capped at the
+    // number of on-shift drivers, so worst case adds a couple of seconds
+    // to the ping response on a Twilio outage.
+    await notifyOnShiftDrivers(drivers, body);
+  }
+
+  return NextResponse.json({ ok: true, stopId: pickupId });
 }
 
 function clampInt(v: unknown, min: number, max: number): number {
