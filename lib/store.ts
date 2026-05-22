@@ -1,5 +1,6 @@
 import type { AppState, Driver, LatLng, Settings, Stop, StopStatus } from "./types";
 import { DEFAULT_BOUNDS, DEFAULT_NOMANS } from "./geofence";
+import { DEFAULT_HOURS } from "./schedule";
 
 // Persistence layer. KV-backed when KV_REST_API_URL/TOKEN env vars are
 // present (added automatically by the Upstash Redis Vercel integration);
@@ -33,6 +34,7 @@ const DEFAULT_SETTINGS: Settings = {
   capacity: 8,
   online: true,
   alertsEnabled: true,
+  hours: DEFAULT_HOURS,
 };
 
 function initState(): AppState {

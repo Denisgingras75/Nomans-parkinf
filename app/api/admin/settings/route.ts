@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { updateSettings } from "@/lib/store";
 import { isAdmin } from "@/lib/auth";
+import { parseHHMM } from "@/lib/schedule";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -52,6 +53,19 @@ export async function POST(req: NextRequest) {
 
   if (body.online !== undefined) patch.online = Boolean(body.online);
   if (body.alertsEnabled !== undefined) patch.alertsEnabled = Boolean(body.alertsEnabled);
+
+  if (body.hours && typeof body.hours === "object") {
+    const h = body.hours as any;
+    const open = typeof h.open === "string" ? h.open : "";
+    const close = typeof h.close === "string" ? h.close : "";
+    if (parseHHMM(open) === null || parseHHMM(close) === null) {
+      return NextResponse.json(
+        { error: "hours.open and hours.close must be HH:MM (24h)" },
+        { status: 400 },
+      );
+    }
+    patch.hours = { enabled: Boolean(h.enabled), open, close };
+  }
 
   const updated = await updateSettings(patch);
   return NextResponse.json({ ok: true, settings: updated });

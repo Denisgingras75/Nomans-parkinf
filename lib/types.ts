@@ -2,12 +2,19 @@ export type LatLng = { lat: number; lng: number };
 
 export type BBox = { south: number; north: number; west: number; east: number };
 
+export type ServiceHours = {
+  enabled: boolean;
+  open: string;
+  close: string;
+};
+
 export type Settings = {
   nomans: LatLng;
   bounds: BBox;
   capacity: number;
   online: boolean;
   alertsEnabled: boolean;
+  hours: ServiceHours;
 };
 
 export type Driver = {

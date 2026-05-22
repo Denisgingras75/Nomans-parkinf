@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { addStop, getDrivers, getSettings, remainingCapacity } from "@/lib/store";
 import { inBounds } from "@/lib/geofence";
+import { isOnlineNow } from "@/lib/schedule";
 import { notifyOnShiftDrivers } from "@/lib/sms";
 
 export const runtime = "nodejs";
@@ -13,7 +14,7 @@ export async function POST(req: NextRequest) {
   }
 
   const settings = await getSettings();
-  if (!settings.online) {
+  if (!isOnlineNow(settings)) {
     return NextResponse.json(
       { error: "The combi is off duty right now. Please try again later.", code: "offline" },
       { status: 503 },

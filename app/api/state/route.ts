@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSettings, getState } from "@/lib/store";
 import { etaMinutes } from "@/lib/geofence";
+import { isOnlineNow } from "@/lib/schedule";
 import { findDriver } from "@/lib/auth";
 
 export const runtime = "nodejs";
@@ -56,7 +57,7 @@ export async function GET(req: NextRequest) {
     shuttle: state.shuttle,
     stops: publicStops,
     nomans: settings.nomans,
-    online: settings.online,
+    online: isOnlineNow(settings),
     yours,
   });
 }

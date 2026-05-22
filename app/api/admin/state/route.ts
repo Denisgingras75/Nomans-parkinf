@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDrivers, getSettings, getState } from "@/lib/store";
 import { isAdmin } from "@/lib/auth";
+import { onlineReason } from "@/lib/schedule";
 import { smsConfigured } from "@/lib/sms";
 
 export const runtime = "nodejs";
@@ -29,5 +30,6 @@ export async function GET(req: NextRequest) {
     legacyDriverEnabled: Boolean(process.env.DRIVER_PASSCODE),
     smsConfigured: smsConfigured(),
     shuttle: state.shuttle,
+    onlineReason: onlineReason(settings),
   });
 }

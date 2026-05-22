@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { BBox, Driver, LatLng, Settings, Stop } from "@/lib/types";
+import type { BBox, Driver, LatLng, ServiceHours, Settings, Stop } from "@/lib/types";
 import { createChimeContext, playChime } from "@/lib/chime";
+
+type OnlineReason = "open" | "manual" | "schedule";
 
 type AdminState = {
   settings: Settings;
@@ -11,6 +13,7 @@ type AdminState = {
   legacyDriverEnabled: boolean;
   smsConfigured: boolean;
   shuttle: { onboard: number; capacity: number; position: LatLng | null; updatedAt: number | null };
+  onlineReason: OnlineReason;
 };
 
 export default function AdminPage() {
@@ -206,9 +209,10 @@ export default function AdminPage() {
     );
   }
 
-  const { settings, drivers, today, legacyDriverEnabled, smsConfigured, shuttle } = data;
+  const { settings, drivers, today, legacyDriverEnabled, smsConfigured, shuttle, onlineReason } = data;
   const updatedAgo =
     shuttle.updatedAt != null ? Math.round((Date.now() - shuttle.updatedAt) / 1000) : null;
+  const effectivelyOnline = onlineReason === "open";
 
   return (
     <main className="page">
@@ -229,12 +233,18 @@ export default function AdminPage() {
           <div>
             <div style={{ fontWeight: 700, fontSize: 18 }}>
               Service is{" "}
-              <span style={{ color: settings.online ? "var(--ok)" : "var(--danger)" }}>
-                {settings.online ? "ONLINE" : "OFFLINE"}
+              <span style={{ color: effectivelyOnline ? "var(--ok)" : "var(--danger)" }}>
+                {effectivelyOnline ? "ONLINE" : "OFFLINE"}
               </span>
+              {onlineReason === "schedule" && (
+                <span className="note" style={{ marginLeft: 8 }}>(outside service hours)</span>
+              )}
+              {onlineReason === "manual" && !settings.online && (
+                <span className="note" style={{ marginLeft: 8 }}>(manually taken offline)</span>
+              )}
             </div>
             <div className="note">
-              {settings.online
+              {effectivelyOnline
                 ? "Guests can ping the combi."
                 : "Pings are blocked. Guests see an off-duty message."}
             </div>
@@ -404,6 +414,13 @@ export default function AdminPage() {
           Add driver
         </button>
       </div>
+
+      {/* Service hours */}
+      <ServiceHoursEditor
+        current={settings.hours}
+        saving={savingSettings}
+        onSave={(hours) => saveSettings({ hours })}
+      />
 
       {/* NoMans location */}
       <NoMansEditor
@@ -643,6 +660,76 @@ function CapacityEditor({
           Save capacity
         </button>
       </div>
+    </div>
+  );
+}
+
+function ServiceHoursEditor({
+  current,
+  saving,
+  onSave,
+}: {
+  current: ServiceHours;
+  saving: boolean;
+  onSave: (h: ServiceHours) => void;
+}) {
+  const [enabled, setEnabled] = useState(current.enabled);
+  const [open, setOpen] = useState(current.open);
+  const [close, setClose] = useState(current.close);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    setEnabled(current.enabled);
+    setOpen(current.open);
+    setClose(current.close);
+  }, [current.enabled, current.open, current.close]);
+
+  const save = () => {
+    setErr(null);
+    if (!/^\d{1,2}:\d{2}$/.test(open) || !/^\d{1,2}:\d{2}$/.test(close)) {
+      setErr("Times must look like 17:00 (24-hour clock).");
+      return;
+    }
+    onSave({ enabled, open, close });
+  };
+
+  const wrapsMidnight = open && close && open > close;
+
+  return (
+    <div className="card">
+      <h2 style={{ margin: "0 0 4px" }}>Service hours</h2>
+      <div className="note" style={{ marginBottom: 12 }}>
+        When enabled, the combi auto-goes online and offline in this window (Eastern time).
+        The manual offline toggle above still wins as a kill-switch.
+      </div>
+      <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+        <input
+          type="checkbox"
+          checked={enabled}
+          onChange={(e) => setEnabled(e.target.checked)}
+          style={{ width: "auto" }}
+        />
+        <span>Schedule enabled</span>
+      </label>
+      <div className="row" style={{ marginTop: 12 }}>
+        <div>
+          <label>Open (HH:MM)</label>
+          <input value={open} onChange={(e) => setOpen(e.target.value)} placeholder="17:00" />
+        </div>
+        <div>
+          <label>Close (HH:MM)</label>
+          <input value={close} onChange={(e) => setClose(e.target.value)} placeholder="23:00" />
+        </div>
+      </div>
+      {wrapsMidnight && (
+        <div className="note" style={{ marginTop: 8 }}>
+          This window wraps past midnight ({open} → {close} next day).
+        </div>
+      )}
+      <button onClick={save} disabled={saving} style={{ marginTop: 12, width: "auto" }}>
+        Save hours
+      </button>
+      {err && <div className="error">{err}</div>}
     </div>
   );
 }
