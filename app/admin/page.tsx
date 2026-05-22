@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { BBox, Driver, LatLng, Settings, Stop } from "@/lib/types";
+import { createChimeContext, playChime } from "@/lib/chime";
 
 type AdminState = {
   settings: Settings;
@@ -23,6 +24,12 @@ export default function AdminPage() {
   const [addingDriver, setAddingDriver] = useState(false);
   const [editingPhoneFor, setEditingPhoneFor] = useState<string | null>(null);
   const [phoneDraft, setPhoneDraft] = useState("");
+  const audioCtxRef = useRef<AudioContext | null>(null);
+
+  const testChime = () => {
+    if (!audioCtxRef.current) audioCtxRef.current = createChimeContext();
+    playChime(audioCtxRef.current);
+  };
 
   useEffect(() => {
     const saved = localStorage.getItem("nomans.adminPass");
@@ -277,6 +284,22 @@ export default function AdminPage() {
             onClick={() => saveSettings({ alertsEnabled: !settings.alertsEnabled })}
           >
             {settings.alertsEnabled ? "Pause alerts" : "Enable alerts"}
+          </button>
+        </div>
+        <hr style={{ border: "none", borderTop: "1px solid var(--border)", margin: "14px 0" }} />
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+          <div>
+            <div style={{ fontWeight: 700 }}>Driver chime test</div>
+            <div className="note">
+              Plays the same bing-bong the /driver dashboard makes on a new pickup. iOS Safari won't make a sound until you tap — try it on the device the driver will use.
+            </div>
+          </div>
+          <button
+            className="secondary"
+            style={{ width: "auto" }}
+            onClick={testChime}
+          >
+            Play chime
           </button>
         </div>
       </div>

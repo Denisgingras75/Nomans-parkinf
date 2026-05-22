@@ -3,6 +3,7 @@
 import dynamic from "next/dynamic";
 import { useEffect, useRef, useState } from "react";
 import type { LatLng } from "@/lib/types";
+import { createChimeContext, playChime } from "@/lib/chime";
 
 const Map = dynamic(() => import("@/components/Map"), { ssr: false });
 
@@ -78,7 +79,7 @@ export default function DriverPage() {
       const previous = knownPickupIdsRef.current;
       const fresh = [...incomingIds].filter((id) => !previous.has(id));
       if (fresh.length > 0) {
-        playChime();
+        playChime(audioCtxRef.current);
         triggerFlash();
       }
     }
@@ -91,38 +92,8 @@ export default function DriverPage() {
     setTimeout(() => setFlash(false), 1200);
   };
 
-  const playChime = () => {
-    const ctx = audioCtxRef.current;
-    if (!ctx) return;
-    if (ctx.state === "suspended") ctx.resume().catch(() => {});
-    const now = ctx.currentTime;
-    // Two-note "bing-bong": A5 then E6.
-    [
-      { freq: 880, t: 0 },
-      { freq: 1320, t: 0.18 },
-    ].forEach(({ freq, t }) => {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = "sine";
-      osc.frequency.value = freq;
-      gain.gain.setValueAtTime(0, now + t);
-      gain.gain.linearRampToValueAtTime(0.35, now + t + 0.015);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + t + 0.5);
-      osc.connect(gain).connect(ctx.destination);
-      osc.start(now + t);
-      osc.stop(now + t + 0.55);
-    });
-  };
-
   const unlock = () => {
-    // iOS Safari requires an AudioContext created from a user gesture.
-    try {
-      const Ctor = (window as any).AudioContext || (window as any).webkitAudioContext;
-      audioCtxRef.current = new Ctor();
-      audioCtxRef.current?.resume().catch(() => {});
-    } catch {
-      /* no audio — flash will still work */
-    }
+    audioCtxRef.current = createChimeContext();
     localStorage.setItem("nomans.driverPass", passcode);
     setAuthed(true);
   };
