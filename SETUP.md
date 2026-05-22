@@ -63,15 +63,31 @@ SHUTTLE_VEHICLE_ID = <VIN or IMEI of the combi>
 
 So pickups from the wrong vehicle are ignored.
 
-## 5. NoMans pin survey — 2 min, on-site
+## 5. NoMans pin — 30 sec (any time) or 2 min on-site
 
-Open `/admin` on a phone, stand at the front door, scroll to "NoMans pin" → tap **Use my current location** → Save. The default in code is approximate; this gets the geofence and ETA right.
+Three ways to set it, in order of accuracy:
+
+1. **Address search (when `GOOGLE_PLACES_API_KEY` is set — see step 7).** `/admin` → NoMans pin → Search field → type "Nomans Oak Bluffs" → pick the suggestion → Save.
+2. **On-site current location.** At the bar's front door, `/admin` → NoMans pin → **Use my current location** → Save. Most precise.
+3. **Manual paste.** Lat/lng from Google Maps → paste into the two fields → Save.
 
 ## 6. Add drivers — 1 min per driver
 
 `/admin` → Drivers → enter name + phone (E.164 like `+15085551234`) → Add. Each driver gets an `NM-XXXXXX` code that's their `/driver` passcode. Text them the code.
 
 Flip them On shift when they start their shift; flip back when they leave. Only on-shift drivers with a phone number get SMS.
+
+## 7. Google Places API (optional) — 1 min
+
+Lights up address search inside `/admin` → NoMans pin so you can pick the bar's coord by name. Without this, the lat/lng + "Use my current location" buttons still work.
+
+In Vercel env vars:
+
+```
+GOOGLE_PLACES_API_KEY = <key from Google Cloud Console, restricted to "Places API (New)">
+```
+
+Restrict the key by API (Places API only) and by HTTP referrer or IP. The key never leaves the server — Next.js API routes (`/api/places/autocomplete`, `/api/places/details`) proxy it. Cost: ~$17/1000 sessions, trivial at shuttle scale.
 
 ## What "working" looks like end-to-end
 

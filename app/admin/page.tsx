@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { BBox, Driver, LatLng, ServiceHours, Settings, Stop } from "@/lib/types";
 import { createChimeContext, playChime } from "@/lib/chime";
+import PlacesAutocomplete from "@/components/PlacesAutocomplete";
 
 type OnlineReason = "open" | "manual" | "schedule";
 
@@ -530,9 +531,18 @@ function NoMansEditor({
     <div className="card">
       <h2 style={{ margin: "0 0 4px" }}>NoMans pin</h2>
       <div className="note" style={{ marginBottom: 12 }}>
-        Stand at the front door and tap "Use my current location," or paste a lat/lng from Google Maps.
+        Search an address, stand at the front door and tap "Use my current location," or paste a lat/lng from Google Maps.
       </div>
-      <div className="row">
+      <label>Search</label>
+      <PlacesAutocomplete
+        placeholder="e.g. Nomans Oak Bluffs"
+        onPick={(p) => {
+          setLat(p.position.lat.toFixed(6));
+          setLng(p.position.lng.toFixed(6));
+          setErr(null);
+        }}
+      />
+      <div className="row" style={{ marginTop: 12 }}>
         <div>
           <label>Lat</label>
           <input value={lat} onChange={(e) => setLat(e.target.value)} />

@@ -46,6 +46,8 @@ PR or continued work on this one.
 | `/api/stops` | POST | Advance a stop's status (queued → enroute → picked-up → dropped-off / cancelled). Adjusts on-board count. | driver |
 | `/api/driver/location` | POST | Driver-phone GPS broadcast | driver |
 | `/api/driver/shift` | POST | Driver flips their own on/off shift | driver (real row only — legacy passcode rejected) |
+| `/api/places/autocomplete` | POST | Google Places (New) Autocomplete proxy (bias = NoMans coord, 8km circle) | none (server-side key) |
+| `/api/places/details` | GET | Resolve a placeId → lat/lng/label | none (server-side key) |
 | `/api/bouncie/webhook` | POST | Bouncie OBD-II location push | secret (query `?secret=` or `X-Bouncie-Secret` header) |
 | `/api/admin/state` | GET | Settings + drivers + today's stops + SMS config status | admin |
 | `/api/admin/settings` | POST | Update nomans / bounds / capacity / online / alertsEnabled | admin |
@@ -94,6 +96,7 @@ See `SETUP.md` for the owner runbook (Upstash, Twilio, Bouncie, NoMans pin, driv
 - `DRIVER_PASSCODE` — legacy single shared driver code; useful as skeleton key if every driver loses their NM-code
 - `SHUTTLE_VEHICLE_ID` — Bouncie VIN/IMEI filter so other vehicles in the same account are ignored
 - `TWILIO_BASE_URL` — override Twilio API endpoint (default `https://api.twilio.com`); used to mock in tests
+- `GOOGLE_PLACES_API_KEY` — server-side key for `/api/places/*` proxies; lights up the address-search input in `/admin` → NoMans pin. Falls back gracefully when absent.
 
 Without KV the app still runs — state lives in process memory and dies on serverless cold starts. Without Twilio the app still runs — SMS calls silently no-op.
 
