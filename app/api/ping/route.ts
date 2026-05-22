@@ -36,23 +36,23 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  if (partySize > remainingCapacity()) {
+  const remaining = await remainingCapacity();
+  if (partySize > remaining) {
     return NextResponse.json(
-      { error: `shuttle is at capacity (${remainingCapacity()} seats left)`, code: "full" },
+      { error: `shuttle is at capacity (${remaining} seats left)`, code: "full" },
       { status: 409 },
     );
   }
 
   if (direction === "to-nomans") {
-    // Pickup at the ping location, dropoff at NoMans.
-    const pickup = addStop({
+    const pickup = await addStop({
       kind: "pickup",
       name,
       partySize,
       position: { lat, lng },
       note,
     });
-    addStop({
+    await addStop({
       kind: "dropoff",
       name,
       partySize,
@@ -62,15 +62,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, stopId: pickup.id });
   }
 
-  // from-nomans: pickup at NoMans, dropoff at the address the guest selected.
-  const pickup = addStop({
+  const pickup = await addStop({
     kind: "pickup",
     name,
     partySize,
     position: NOMANS,
-    note: "NoMans Land Brewing",
+    note: "NoMans Restaurant",
   });
-  addStop({
+  await addStop({
     kind: "dropoff",
     name,
     partySize,

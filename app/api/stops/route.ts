@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "bad id or status" }, { status: 400 });
   }
 
-  const updated = setStopStatus(id, status);
+  const updated = await setStopStatus(id, status);
   if (!updated) return NextResponse.json({ error: "stop not found" }, { status: 404 });
   return NextResponse.json({ ok: true, stop: updated });
 }

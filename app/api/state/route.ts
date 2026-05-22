@@ -15,7 +15,7 @@ export async function GET(req: NextRequest) {
   const driver = url.searchParams.get("driver");
   const driverPass = process.env.DRIVER_PASSCODE;
 
-  const state = getState();
+  const state = await getState();
   const activeStops = state.stops.filter((s) => s.status === "queued" || s.status === "enroute");
 
   // Strip notes for non-driver consumers — keeps PII out of the public feed.

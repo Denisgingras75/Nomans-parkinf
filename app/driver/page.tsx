@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { LatLng } from "@/lib/types";
 
 const Map = dynamic(() => import("@/components/Map"), { ssr: false });
@@ -27,6 +27,14 @@ export default function DriverPage() {
   const [authed, setAuthed] = useState(false);
   const [state, setState] = useState<StateResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [flash, setFlash] = useState(false);
+  const [broadcasting, setBroadcasting] = useState(false);
+  const [broadcastError, setBroadcastError] = useState<string | null>(null);
+
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const knownPickupIdsRef = useRef<Set<string>>(new Set());
+  const alertPrimedRef = useRef(false);
+  const watchIdRef = useRef<number | null>(null);
 
   useEffect(() => {
     const saved = localStorage.getItem("nomans.driverPass");
@@ -36,6 +44,7 @@ export default function DriverPage() {
     }
   }, []);
 
+  // Poll state every 4s while authenticated.
   useEffect(() => {
     if (!authed) return;
     let alive = true;
@@ -46,7 +55,7 @@ export default function DriverPage() {
         const data = (await res.json()) as StateResponse;
         if (alive) setState(data);
       } catch {
-        /* ignore transient errors */
+        /* transient — retry next tick */
       }
     };
     tick();
@@ -56,6 +65,67 @@ export default function DriverPage() {
       clearInterval(t);
     };
   }, [authed, passcode]);
+
+  // Detect new pickup pings → chime + flash. The first state load
+  // doesn't trigger an alert — queue items present on unlock are
+  // treated as already known.
+  useEffect(() => {
+    if (!state) return;
+    const incomingIds = new Set(
+      state.stops.filter((s) => s.kind === "pickup").map((s) => s.id),
+    );
+    if (alertPrimedRef.current) {
+      const previous = knownPickupIdsRef.current;
+      const fresh = [...incomingIds].filter((id) => !previous.has(id));
+      if (fresh.length > 0) {
+        playChime();
+        triggerFlash();
+      }
+    }
+    knownPickupIdsRef.current = incomingIds;
+    alertPrimedRef.current = true;
+  }, [state]);
+
+  const triggerFlash = () => {
+    setFlash(true);
+    setTimeout(() => setFlash(false), 1200);
+  };
+
+  const playChime = () => {
+    const ctx = audioCtxRef.current;
+    if (!ctx) return;
+    if (ctx.state === "suspended") ctx.resume().catch(() => {});
+    const now = ctx.currentTime;
+    // Two-note "bing-bong": A5 then E6.
+    [
+      { freq: 880, t: 0 },
+      { freq: 1320, t: 0.18 },
+    ].forEach(({ freq, t }) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0, now + t);
+      gain.gain.linearRampToValueAtTime(0.35, now + t + 0.015);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + t + 0.5);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(now + t);
+      osc.stop(now + t + 0.55);
+    });
+  };
+
+  const unlock = () => {
+    // iOS Safari requires an AudioContext created from a user gesture.
+    try {
+      const Ctor = (window as any).AudioContext || (window as any).webkitAudioContext;
+      audioCtxRef.current = new Ctor();
+      audioCtxRef.current?.resume().catch(() => {});
+    } catch {
+      /* no audio — flash will still work */
+    }
+    localStorage.setItem("nomans.driverPass", passcode);
+    setAuthed(true);
+  };
 
   const advance = async (id: string, status: Stop["status"]) => {
     setError(null);
@@ -69,6 +139,56 @@ export default function DriverPage() {
       setError(data.error ?? "Action failed");
     }
   };
+
+  // ----- Driver-phone GPS broadcast -----
+  const startBroadcast = () => {
+    setBroadcastError(null);
+    if (!navigator.geolocation) {
+      setBroadcastError("This browser can't share location.");
+      return;
+    }
+    const id = navigator.geolocation.watchPosition(
+      async (pos) => {
+        try {
+          await fetch("/api/driver/location", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              lat: pos.coords.latitude,
+              lng: pos.coords.longitude,
+              heading: pos.coords.heading,
+              speed: pos.coords.speed,
+              passcode,
+            }),
+          });
+        } catch {
+          /* one missed update is fine, the next watchPosition fix retries */
+        }
+      },
+      (err) => setBroadcastError(err.message || "Location error"),
+      { enableHighAccuracy: true, maximumAge: 4000, timeout: 15000 },
+    );
+    watchIdRef.current = id;
+    setBroadcasting(true);
+    localStorage.setItem("nomans.broadcast", "1");
+  };
+
+  const stopBroadcast = () => {
+    if (watchIdRef.current != null) navigator.geolocation.clearWatch(watchIdRef.current);
+    watchIdRef.current = null;
+    setBroadcasting(false);
+    localStorage.setItem("nomans.broadcast", "0");
+  };
+
+  // Resume broadcast across reloads if it was on before.
+  useEffect(() => {
+    if (!authed) return;
+    if (localStorage.getItem("nomans.broadcast") === "1") startBroadcast();
+    return () => {
+      if (watchIdRef.current != null) navigator.geolocation.clearWatch(watchIdRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authed]);
 
   if (!authed) {
     return (
@@ -84,17 +204,14 @@ export default function DriverPage() {
             type="password"
             value={passcode}
             onChange={(e) => setPasscode(e.target.value)}
-            placeholder="Set in your env file"
+            placeholder="Set in your Vercel env vars"
           />
-          <button
-            style={{ marginTop: 12 }}
-            onClick={() => {
-              localStorage.setItem("nomans.driverPass", passcode);
-              setAuthed(true);
-            }}
-          >
+          <button style={{ marginTop: 12 }} onClick={unlock}>
             Unlock
           </button>
+          <p className="note" style={{ marginTop: 12 }}>
+            Tapping Unlock also primes the chime sound (iOS Safari requires it).
+          </p>
         </div>
       </main>
     );
@@ -109,6 +226,8 @@ export default function DriverPage() {
 
   return (
     <main className="driver-page">
+      <div className={`flash-overlay${flash ? " on" : ""}`} aria-hidden />
+
       <header className="brand">
         <img src="/nomans-logo.png" alt="NoMans" className="brand-logo" />
         <div className="brand-tag">
@@ -140,7 +259,28 @@ export default function DriverPage() {
         </div>
       </div>
 
-      {error && <div className="card" style={{ borderColor: "var(--danger)" }}><div className="error">{error}</div></div>}
+      <div className="card" style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+        <div style={{ flex: 1, minWidth: 160 }}>
+          <div style={{ fontWeight: 700 }}>Broadcast my phone's GPS</div>
+          <div className="note">Use this when the Bouncie dongle isn't installed yet.</div>
+          {broadcastError && <div className="error">{broadcastError}</div>}
+        </div>
+        {broadcasting ? (
+          <button className="danger" onClick={stopBroadcast} style={{ width: "auto" }}>
+            Stop broadcast
+          </button>
+        ) : (
+          <button onClick={startBroadcast} style={{ width: "auto" }}>
+            Start broadcast
+          </button>
+        )}
+      </div>
+
+      {error && (
+        <div className="card" style={{ borderColor: "var(--danger)" }}>
+          <div className="error">{error}</div>
+        </div>
+      )}
 
       <div className="driver-grid">
         <div>
@@ -156,18 +296,24 @@ export default function DriverPage() {
                 </div>
                 <span className={`tag ${s.status === "enroute" ? "enroute" : "queued"}`}>{s.status}</span>
               </div>
-              {s.note && <div className="note">"{s.note}"</div>}
+              {s.note && <div className="note">&ldquo;{s.note}&rdquo;</div>}
               <div className="stop-actions">
                 {s.status === "queued" && (
                   <button onClick={() => advance(s.id, "enroute")}>Mark en route</button>
                 )}
                 {s.kind === "pickup" && s.status !== "picked-up" && (
-                  <button className="ok" onClick={() => advance(s.id, "picked-up")}>Picked up</button>
+                  <button className="ok" onClick={() => advance(s.id, "picked-up")}>
+                    Picked up
+                  </button>
                 )}
                 {s.kind === "dropoff" && (
-                  <button className="ok" onClick={() => advance(s.id, "dropped-off")}>Dropped off</button>
+                  <button className="ok" onClick={() => advance(s.id, "dropped-off")}>
+                    Dropped off
+                  </button>
                 )}
-                <button className="secondary" onClick={() => advance(s.id, "cancelled")}>Cancel</button>
+                <button className="secondary" onClick={() => advance(s.id, "cancelled")}>
+                  Cancel
+                </button>
               </div>
             </div>
           ))}
@@ -175,12 +321,7 @@ export default function DriverPage() {
 
         <div>
           <h2>Map</h2>
-          <Map
-            shuttle={shuttle}
-            nomans={nomans}
-            stops={queued}
-            className="map map-driver"
-          />
+          <Map shuttle={shuttle} nomans={nomans} stops={queued} className="map map-driver" />
         </div>
       </div>
     </main>

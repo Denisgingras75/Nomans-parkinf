@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, ignored: "no coordinates in payload" });
   }
 
-  updateShuttle({
+  await updateShuttle({
     position: { lat, lng },
     heading: heading ?? null,
     speedMph: speedMph ?? null,
