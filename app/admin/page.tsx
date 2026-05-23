@@ -29,10 +29,37 @@ export default function AdminPage() {
   const [editingPhoneFor, setEditingPhoneFor] = useState<string | null>(null);
   const [phoneDraft, setPhoneDraft] = useState("");
   const audioCtxRef = useRef<AudioContext | null>(null);
+  const [smsTestStatus, setSmsTestStatus] = useState<string | null>(null);
+  const [smsTesting, setSmsTesting] = useState(false);
 
   const testChime = () => {
     if (!audioCtxRef.current) audioCtxRef.current = createChimeContext();
     playChime(audioCtxRef.current);
+  };
+
+  const testSms = async () => {
+    setSmsTesting(true);
+    setSmsTestStatus(null);
+    try {
+      const res = await fetch("/api/admin/sms-test", {
+        method: "POST",
+        headers: { "x-admin-passcode": passcode },
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setSmsTestStatus(json.error ?? "Test failed");
+        return;
+      }
+      if (json.failed === 0) {
+        setSmsTestStatus(`✓ Sent to ${json.sent} driver${json.sent === 1 ? "" : "s"}.`);
+      } else {
+        setSmsTestStatus(`Sent ${json.sent}/${json.total}. Failures logged.`);
+      }
+    } catch {
+      setSmsTestStatus("Network error.");
+    } finally {
+      setSmsTesting(false);
+    }
   };
 
   useEffect(() => {
@@ -295,6 +322,28 @@ export default function AdminPage() {
             onClick={() => saveSettings({ alertsEnabled: !settings.alertsEnabled })}
           >
             {settings.alertsEnabled ? "Pause alerts" : "Enable alerts"}
+          </button>
+        </div>
+        <hr style={{ border: "none", borderTop: "1px solid var(--border)", margin: "14px 0" }} />
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontWeight: 700 }}>SMS path test</div>
+            <div className="note">
+              Sends "🚐 TEST PING" to every on-shift driver with a phone on file. Use it before opening for the night.
+            </div>
+            {smsTestStatus && (
+              <div className="note" style={{ marginTop: 6, color: "var(--text-bright)" }}>
+                {smsTestStatus}
+              </div>
+            )}
+          </div>
+          <button
+            className="secondary"
+            style={{ width: "auto" }}
+            disabled={smsTesting || !smsConfigured}
+            onClick={testSms}
+          >
+            {smsTesting ? "Sending…" : "Send test SMS"}
           </button>
         </div>
         <hr style={{ border: "none", borderTop: "1px solid var(--border)", margin: "14px 0" }} />
