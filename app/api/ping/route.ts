@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { addStop, getDrivers, getSettings, remainingCapacity } from "@/lib/store";
 import { inBounds } from "@/lib/geofence";
 import { isOnlineNow } from "@/lib/schedule";
-import { notifyOnShiftDrivers } from "@/lib/sms";
+import { normalizePhone, notifyOnShiftDrivers } from "@/lib/sms";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -25,6 +25,7 @@ export async function POST(req: NextRequest) {
   const partySize = clampInt(body.partySize, 1, 6);
   const direction = body.direction === "to-nomans" ? "to-nomans" : "from-nomans";
   const note = body.note ? String(body.note).trim().slice(0, 140) : undefined;
+  const phone = body.phone ? normalizePhone(String(body.phone)) : null;
 
   const lat = Number(body?.position?.lat);
   const lng = Number(body?.position?.lng);
@@ -59,6 +60,7 @@ export async function POST(req: NextRequest) {
       partySize,
       position: { lat, lng },
       note,
+      phone,
     });
     await addStop({
       kind: "dropoff",
@@ -66,6 +68,7 @@ export async function POST(req: NextRequest) {
       partySize,
       position: settings.nomans,
       note: "NoMans Restaurant",
+      phone,
     });
     pickupId = pickup.id;
   } else {
@@ -75,6 +78,7 @@ export async function POST(req: NextRequest) {
       partySize,
       position: settings.nomans,
       note: "NoMans Restaurant",
+      phone,
     });
     await addStop({
       kind: "dropoff",
@@ -82,6 +86,7 @@ export async function POST(req: NextRequest) {
       partySize,
       position: { lat, lng },
       note,
+      phone,
     });
     pickupId = pickup.id;
   }
@@ -90,7 +95,8 @@ export async function POST(req: NextRequest) {
     const origin = new URL(req.url).origin;
     const where = direction === "to-nomans" ? "TO NoMans" : "FROM NoMans";
     const noteTail = note ? ` Note: "${note.slice(0, 80)}"` : "";
-    const body = `🚐 NoMans Combi: ${where}, ${name} (party of ${partySize}).${noteTail} Open ${origin}/driver`;
+    const phoneTail = phone ? ` ${phone}` : "";
+    const body = `🚐 NoMans Combi: ${where}, ${name}${phoneTail} (party of ${partySize}).${noteTail} Open ${origin}/driver`;
     const drivers = await getDrivers();
     // Awaited so we know the dispatch finished before the serverless
     // instance terminates. Each send has a 2.5s timeout, capped at the

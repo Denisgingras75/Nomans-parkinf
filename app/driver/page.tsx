@@ -15,6 +15,7 @@ type Stop = {
   position: LatLng;
   name?: string;
   note?: string;
+  phone?: string | null;
 };
 
 type StateResponse = {
@@ -309,37 +310,49 @@ export default function DriverPage() {
         <div>
           <h2>Queue</h2>
           {queued.length === 0 && <div className="card note">Nothing queued. Cruise the loop.</div>}
-          {queued.map((s) => (
-            <div key={s.id} className="stop">
-              <div className="stop-head">
-                <div>
-                  <span className={`tag ${s.kind}`}>{s.kind}</span>{" "}
-                  <strong>{s.name ?? "Guest"}</strong>{" "}
-                  <span className="note">× {s.partySize}</span>
+          {queued.map((s) => {
+            const navUrl = `https://www.google.com/maps/dir/?api=1&destination=${s.position.lat},${s.position.lng}`;
+            return (
+              <div key={s.id} className="stop">
+                <div className="stop-head">
+                  <div>
+                    <span className={`tag ${s.kind}`}>{s.kind}</span>{" "}
+                    <strong>{s.name ?? "Guest"}</strong>{" "}
+                    <span className="note">× {s.partySize}</span>
+                  </div>
+                  <span className={`tag ${s.status === "enroute" ? "enroute" : "queued"}`}>{s.status}</span>
                 </div>
-                <span className={`tag ${s.status === "enroute" ? "enroute" : "queued"}`}>{s.status}</span>
-              </div>
-              {s.note && <div className="note">&ldquo;{s.note}&rdquo;</div>}
-              <div className="stop-actions">
-                {s.status === "queued" && (
-                  <button onClick={() => advance(s.id, "enroute")}>Mark en route</button>
+                {s.note && <div className="note">&ldquo;{s.note}&rdquo;</div>}
+                {s.phone && (
+                  <div className="stop-actions">
+                    <a className="contact-link" href={`tel:${s.phone}`}>📞 Call {s.phone}</a>
+                    <a className="contact-link" href={`sms:${s.phone}`}>💬 Text</a>
+                  </div>
                 )}
-                {s.kind === "pickup" && s.status !== "picked-up" && (
-                  <button className="ok" onClick={() => advance(s.id, "picked-up")}>
-                    Picked up
+                <div className="stop-actions">
+                  <a className="nav-link" href={navUrl} target="_blank" rel="noopener noreferrer">
+                    🧭 Navigate
+                  </a>
+                  {s.status === "queued" && (
+                    <button onClick={() => advance(s.id, "enroute")}>Mark en route</button>
+                  )}
+                  {s.kind === "pickup" && s.status !== "picked-up" && (
+                    <button className="ok" onClick={() => advance(s.id, "picked-up")}>
+                      Picked up
+                    </button>
+                  )}
+                  {s.kind === "dropoff" && (
+                    <button className="ok" onClick={() => advance(s.id, "dropped-off")}>
+                      Dropped off
+                    </button>
+                  )}
+                  <button className="secondary" onClick={() => advance(s.id, "cancelled")}>
+                    Cancel
                   </button>
-                )}
-                {s.kind === "dropoff" && (
-                  <button className="ok" onClick={() => advance(s.id, "dropped-off")}>
-                    Dropped off
-                  </button>
-                )}
-                <button className="secondary" onClick={() => advance(s.id, "cancelled")}>
-                  Cancel
-                </button>
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
 
         <div>

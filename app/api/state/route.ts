@@ -40,6 +40,7 @@ export async function GET(req: NextRequest) {
     position: s.position,
     name: isDriver ? s.name : undefined,
     note: isDriver ? s.note : undefined,
+    phone: isDriver ? s.phone ?? null : undefined,
   }));
 
   let yours: { etaMinutes: number | null; position: number; status: string } | null = null;

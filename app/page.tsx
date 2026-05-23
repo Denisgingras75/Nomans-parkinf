@@ -22,6 +22,7 @@ export default function PassengerPage() {
   const [name, setName] = useState("");
   const [partySize, setPartySize] = useState(2);
   const [note, setNote] = useState("");
+  const [phone, setPhone] = useState("");
   const [me, setMe] = useState<LatLng | null>(null);
   const [meLabel, setMeLabel] = useState<string | null>(null);
   const [locating, setLocating] = useState(false);
@@ -99,7 +100,7 @@ export default function PassengerPage() {
       const res = await fetch("/api/ping", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ name, partySize, note, direction, position: me }),
+        body: JSON.stringify({ name, partySize, note, phone, direction, position: me }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -184,6 +185,18 @@ export default function PassengerPage() {
           <input id="name" value={name} onChange={(e) => setName(e.target.value)} placeholder="So the driver knows who to pick up" />
 
           <div className="row" style={{ marginTop: 12 }}>
+            <div>
+              <label htmlFor="phone">Phone (optional)</label>
+              <input
+                id="phone"
+                type="tel"
+                inputMode="tel"
+                autoComplete="tel"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="508-555-1234"
+              />
+            </div>
             <div>
               <label htmlFor="party">Party size</label>
               <select id="party" value={partySize} onChange={(e) => setPartySize(Number(e.target.value))}>

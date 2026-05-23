@@ -44,6 +44,7 @@ export type Stop = {
   partySize: number;
   position: LatLng;
   note?: string;
+  phone?: string | null;
   status: StopStatus;
   createdAt: number;
   updatedAt: number;
