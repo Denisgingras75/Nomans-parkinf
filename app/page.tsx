@@ -3,6 +3,7 @@
 import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
 import type { LatLng } from "@/lib/types";
+import PlacesAutocomplete from "@/components/PlacesAutocomplete";
 
 const Map = dynamic(() => import("@/components/Map"), { ssr: false });
 
@@ -22,6 +23,7 @@ export default function PassengerPage() {
   const [partySize, setPartySize] = useState(2);
   const [note, setNote] = useState("");
   const [me, setMe] = useState<LatLng | null>(null);
+  const [meLabel, setMeLabel] = useState<string | null>(null);
   const [locating, setLocating] = useState(false);
   const [locError, setLocError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -71,6 +73,7 @@ export default function PassengerPage() {
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         setMe({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        setMeLabel("Current location");
         setLocating(false);
       },
       (err) => {
@@ -203,19 +206,41 @@ export default function PassengerPage() {
             placeholder={direction === "to-nomans" ? "e.g. corner of Circuit & Kennebec" : "e.g. drop us at the Wesley House"}
           />
 
-          <div style={{ marginTop: 12 }}>
+          <div style={{ marginTop: 16 }}>
+            <label>{direction === "to-nomans" ? "Pickup address" : "Dropoff address"}</label>
+            <PlacesAutocomplete
+              placeholder={direction === "to-nomans" ? "e.g. Wesley House, Oak Bluffs" : "Drop me at…"}
+              initialValue={meLabel && meLabel !== "Current location" ? meLabel : ""}
+              onPick={(p) => {
+                setMe(p.position);
+                setMeLabel(p.label);
+                setLocError(null);
+              }}
+            />
             {me ? (
-              <div className="note">
-                {direction === "to-nomans"
-                  ? `Pickup location set — accuracy ${Math.round((me as any).accuracy ?? 0) || "good"}`
-                  : "Dropoff location set."}{" "}
-                <a href="#" onClick={(e) => { e.preventDefault(); requestLocation(); }}>
-                  re-locate
+              <div className="note" style={{ marginTop: 8 }}>
+                {direction === "to-nomans" ? "Pickup" : "Dropoff"} at{" "}
+                <strong>{meLabel ?? "set location"}</strong>.{" "}
+                <a
+                  href="#"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    setMe(null);
+                    setMeLabel(null);
+                  }}
+                >
+                  change
                 </a>
               </div>
             ) : (
-              <button type="button" className="secondary" onClick={requestLocation} disabled={locating}>
-                {locating ? "Locating…" : direction === "to-nomans" ? "Use my current location" : "Pick dropoff (use current location)"}
+              <button
+                type="button"
+                className="secondary"
+                onClick={requestLocation}
+                disabled={locating}
+                style={{ marginTop: 8 }}
+              >
+                {locating ? "Locating…" : "Or use my current location"}
               </button>
             )}
             {locError && <div className="error">{locError}</div>}
