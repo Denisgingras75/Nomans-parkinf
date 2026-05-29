@@ -70,27 +70,7 @@ async function kvSet<T>(key: string, value: T): Promise<void> {
 // ---------- State (shuttle position + active queue) ----------
 
 async function readState(): Promise<AppState> {
-  const u = useKV();
-  // TEMP DEBUG
-  try {
-    await kv.set("nomans:debug:read-state-trace", {
-      useKV: u,
-      url: process.env.KV_REST_API_URL?.slice(0, 35),
-      tokenLen: process.env.KV_REST_API_TOKEN?.length ?? 0,
-      ts: Date.now(),
-    });
-  } catch {}
-  if (u) {
-    const got = await kvGet<AppState>(KV_STATE_KEY);
-    try {
-      await kv.set("nomans:debug:read-state-got", {
-        gotShuttle: got?.shuttle,
-        gotIsNull: got === null,
-        ts: Date.now(),
-      });
-    } catch {}
-    return got ?? initState();
-  }
+  if (useKV()) return (await kvGet<AppState>(KV_STATE_KEY)) ?? initState();
   if (!memory.__nomansState) memory.__nomansState = initState();
   return memory.__nomansState;
 }
