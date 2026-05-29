@@ -32,6 +32,10 @@ export async function GET(req: NextRequest) {
     const state = await kv.get("nomans:state:v1");
     report.state_key_present = state !== null;
     report.state_value = state;
+
+    // What did /api/state see last time it ran?
+    const stateRouteSaw = await kv.get("nomans:debug:state-route-saw");
+    report.state_route_saw = stateRouteSaw;
   } catch (err: any) {
     report.error = err?.message ?? String(err);
     report.error_stack = err?.stack?.split("\n").slice(0, 5);
