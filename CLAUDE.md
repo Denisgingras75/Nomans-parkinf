@@ -3,7 +3,9 @@
 On-demand "ping for pickup" shuttle dispatch for **NoMans Restaurant**,
 Oak Bluffs, Martha's Vineyard. Guests open the site on a phone, tap a
 button to request the combi, and the on-shift driver gets an SMS plus a
-live queue on a dashboard. Owner manages everything from `/admin`
+live queue on a dashboard. Live at **https://nomansdrive.com**
+(Vercel project `nomans-parkinf`, `nomans-parkinf.vercel.app` still
+resolves as an alias). Owner manages everything from `/admin`
 without redeploying.
 
 Stack: Next.js 14 (App Router) · React 18 · Leaflet · Vercel KV

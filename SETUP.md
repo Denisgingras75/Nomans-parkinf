@@ -51,7 +51,7 @@ BOUNCIE_WEBHOOK_SECRET = whatever-long-random-string
 2. Bouncie Developer Portal → Webhooks → add:
 
 ```
-URL: https://<your-vercel-domain>/api/bouncie/webhook?secret=<same-string>
+URL: https://nomansdrive.com/api/bouncie/webhook?secret=<same-string>
 Events: location
 ```
 
