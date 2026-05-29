@@ -19,6 +19,7 @@ import { DEFAULT_HOURS } from "./schedule";
 const KV_STATE_KEY = "nomans:state:v1";
 const KV_SETTINGS_KEY = "nomans:settings:v1";
 const KV_DRIVERS_KEY = "nomans:drivers:v1";
+const KV_PUSH_SUBS_KEY = "nomans:push-subs:v1";
 const KV_RIDES_PREFIX = "nomans:rides:"; // suffix: YYYY-MM-DD (Eastern)
 
 // Always attempt KV first. The @vercel/kv client throws if env vars
@@ -33,6 +34,17 @@ const memory = globalThis as unknown as {
   __nomansSettings?: Settings;
   __nomansDrivers?: Driver[];
   __nomansRides?: Record<string, Stop[]>;
+  __nomansPushSubs?: StoredPushSub[];
+};
+
+export type StoredPushSub = {
+  driverId: string;
+  subscription: {
+    endpoint: string;
+    expirationTime?: number | null;
+    keys: { p256dh: string; auth: string };
+  };
+  createdAt: number;
 };
 
 const DEFAULT_SETTINGS: Settings = {
@@ -277,6 +289,35 @@ async function appendToRideArchive(stop: Stop): Promise<void> {
     const current = memory.__nomansRides[day] ?? [];
     memory.__nomansRides[day] = [...current.filter((s) => s.id !== stop.id), stop];
   }
+}
+
+// ---------- Push subscriptions (Web Push / VAPID) ----------
+
+export async function getPushSubscriptions(): Promise<StoredPushSub[]> {
+  if (useKV()) return (await kvGet<StoredPushSub[]>(KV_PUSH_SUBS_KEY)) ?? [];
+  return memory.__nomansPushSubs ?? [];
+}
+
+// Upsert by endpoint — re-subscribing on the same device replaces the
+// old record. Optionally re-binds to a different driverId if a driver
+// reuses the same browser.
+export async function upsertPushSubscription(
+  record: StoredPushSub,
+): Promise<void> {
+  const subs = await getPushSubscriptions();
+  const next = [
+    ...subs.filter((s) => s.subscription.endpoint !== record.subscription.endpoint),
+    record,
+  ];
+  if (useKV()) await kvSet(KV_PUSH_SUBS_KEY, next);
+  else memory.__nomansPushSubs = next;
+}
+
+export async function removePushSubscription(endpoint: string): Promise<void> {
+  const subs = await getPushSubscriptions();
+  const next = subs.filter((s) => s.subscription.endpoint !== endpoint);
+  if (useKV()) await kvSet(KV_PUSH_SUBS_KEY, next);
+  else memory.__nomansPushSubs = next;
 }
 
 // ---------- helpers ----------

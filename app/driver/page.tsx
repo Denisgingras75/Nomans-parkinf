@@ -41,6 +41,10 @@ export default function DriverPage() {
   const [broadcasting, setBroadcasting] = useState(false);
   const [broadcastError, setBroadcastError] = useState<string | null>(null);
   const [shiftToggling, setShiftToggling] = useState(false);
+  const [pushStatus, setPushStatus] = useState<
+    "unknown" | "unsupported" | "denied" | "off" | "on" | "working"
+  >("unknown");
+  const [pushError, setPushError] = useState<string | null>(null);
 
   const audioCtxRef = useRef<AudioContext | null>(null);
   const knownPickupIdsRef = useRef<Set<string>>(new Set());
@@ -127,6 +131,106 @@ export default function DriverPage() {
       }
     } finally {
       setShiftToggling(false);
+    }
+  };
+
+  // ----- Web Push -----
+  const checkPushStatus = async () => {
+    if (typeof window === "undefined") return;
+    if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+      setPushStatus("unsupported");
+      return;
+    }
+    if (Notification.permission === "denied") {
+      setPushStatus("denied");
+      return;
+    }
+    try {
+      const reg = await navigator.serviceWorker.getRegistration("/sw.js");
+      if (!reg) {
+        setPushStatus("off");
+        return;
+      }
+      const sub = await reg.pushManager.getSubscription();
+      setPushStatus(sub ? "on" : "off");
+    } catch {
+      setPushStatus("off");
+    }
+  };
+
+  useEffect(() => {
+    if (!authed) return;
+    checkPushStatus();
+  }, [authed]);
+
+  const enablePush = async () => {
+    setPushError(null);
+    setPushStatus("working");
+    try {
+      if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+        setPushStatus("unsupported");
+        return;
+      }
+      const reg =
+        (await navigator.serviceWorker.getRegistration("/sw.js")) ??
+        (await navigator.serviceWorker.register("/sw.js"));
+      await navigator.serviceWorker.ready;
+
+      const perm = await Notification.requestPermission();
+      if (perm !== "granted") {
+        setPushStatus(perm === "denied" ? "denied" : "off");
+        return;
+      }
+
+      const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+      if (!vapidKey) {
+        setPushError("Server-side push key missing.");
+        setPushStatus("off");
+        return;
+      }
+
+      let sub = await reg.pushManager.getSubscription();
+      if (!sub) {
+        sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(vapidKey),
+        });
+      }
+
+      const res = await fetch("/api/push/subscribe", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ passcode, subscription: sub.toJSON() }),
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        setPushError(j.error ?? "Server rejected the subscription.");
+        setPushStatus("off");
+        return;
+      }
+      setPushStatus("on");
+    } catch (e: any) {
+      setPushError(e?.message ?? "Couldn't enable alerts.");
+      setPushStatus("off");
+    }
+  };
+
+  const disablePush = async () => {
+    setPushError(null);
+    try {
+      const reg = await navigator.serviceWorker.getRegistration("/sw.js");
+      const sub = reg ? await reg.pushManager.getSubscription() : null;
+      if (sub) {
+        await fetch("/api/push/unsubscribe", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ passcode, endpoint: sub.endpoint }),
+        }).catch(() => {});
+        await sub.unsubscribe();
+      }
+      setPushStatus("off");
+    } catch (e: any) {
+      setPushError(e?.message ?? "Couldn't disable.");
     }
   };
 
@@ -292,6 +396,41 @@ export default function DriverPage() {
         </div>
       )}
 
+      <div
+        className="card"
+        style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}
+      >
+        <div style={{ flex: 1, minWidth: 160 }}>
+          <div style={{ fontWeight: 700 }}>Phone alerts (push)</div>
+          <div className="note">
+            {pushStatus === "on"
+              ? "This phone gets a push notification (with sound + vibrate) on every new pickup, even when this page is closed."
+              : pushStatus === "denied"
+              ? "Notifications are blocked. Open Settings → Notifications → Allow for this site."
+              : pushStatus === "unsupported"
+              ? "This browser doesn't support push. Try Safari 16.4+ or Chrome on Android."
+              : pushStatus === "working"
+              ? "Setting up…"
+              : "Enable to get pinged like Uber — no SMS, no app store."}
+          </div>
+          {pushError && <div className="error">{pushError}</div>}
+        </div>
+        {pushStatus === "on" ? (
+          <button className="secondary" onClick={disablePush} style={{ width: "auto" }}>
+            Disable
+          </button>
+        ) : (
+          <button
+            className="ok"
+            onClick={enablePush}
+            disabled={pushStatus === "unsupported" || pushStatus === "working"}
+            style={{ width: "auto" }}
+          >
+            {pushStatus === "working" ? "Enabling…" : "Enable phone alerts"}
+          </button>
+        )}
+      </div>
+
       <div className="card" style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
         <div style={{ flex: 1, minWidth: 160 }}>
           <div style={{ fontWeight: 700 }}>Broadcast my phone's GPS</div>
@@ -371,4 +510,14 @@ export default function DriverPage() {
       </div>
     </main>
   );
+}
+
+// VAPID keys are URL-safe base64. PushManager.subscribe wants a Uint8Array.
+function urlBase64ToUint8Array(base64String: string): Uint8Array {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const raw = typeof window === "undefined" ? Buffer.from(base64, "base64").toString("binary") : atob(base64);
+  const out = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+  return out;
 }

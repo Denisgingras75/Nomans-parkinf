@@ -3,6 +3,7 @@ import { addStop, getDrivers, getSettings, remainingCapacity } from "@/lib/store
 import { inBounds } from "@/lib/geofence";
 import { isOnlineNow } from "@/lib/schedule";
 import { normalizePhone, notifyOnShiftDrivers } from "@/lib/sms";
+import { sendPushToDrivers } from "@/lib/push";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -96,13 +97,22 @@ export async function POST(req: NextRequest) {
     const where = direction === "to-nomans" ? "TO NoMans" : "FROM NoMans";
     const noteTail = note ? ` Note: "${note.slice(0, 80)}"` : "";
     const phoneTail = phone ? ` ${phone}` : "";
-    const body = `🚐 NoMans Combi: ${where}, ${name}${phoneTail} (party of ${partySize}).${noteTail} Open ${origin}/driver`;
+    const smsBody = `🚐 NoMans Combi: ${where}, ${name}${phoneTail} (party of ${partySize}).${noteTail} Open ${origin}/driver`;
     const drivers = await getDrivers();
-    // Awaited so we know the dispatch finished before the serverless
-    // instance terminates. Each send has a 2.5s timeout, capped at the
-    // number of on-shift drivers, so worst case adds a couple of seconds
-    // to the ping response on a Twilio outage.
-    await notifyOnShiftDrivers(drivers, body);
+    const onShiftIds = drivers.filter((d) => d.onShift).map((d) => d.id);
+
+    // Fan out via both channels in parallel — Web Push for drivers who
+    // installed the PWA, Twilio SMS for the rest. Push is cheaper, faster,
+    // and works even when /driver is closed. SMS stays as fallback until
+    // every driver has installed the app.
+    await Promise.allSettled([
+      sendPushToDrivers(onShiftIds, {
+        title: "🚐 New pickup",
+        body: `${where} — ${name} (party of ${partySize})${note ? ` · "${note.slice(0, 80)}"` : ""}`,
+        url: "/driver",
+      }),
+      notifyOnShiftDrivers(drivers, smsBody),
+    ]);
   }
 
   return NextResponse.json({ ok: true, stopId: pickupId });
