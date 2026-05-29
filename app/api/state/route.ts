@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { kv } from "@vercel/kv";
 import { getSettings, getState } from "@/lib/store";
 import { etaMinutes } from "@/lib/geofence";
 import { isOnlineNow } from "@/lib/schedule";
@@ -28,6 +29,25 @@ export async function GET(req: NextRequest) {
     findDriver(driverParam),
     findFullDriver(driverParam),
   ]);
+
+  // TEMP probe — write what getState saw + what we're about to return
+  try {
+    const { kv } = await import("@vercel/kv");
+    const payload = {
+      shuttle: state.shuttle,
+      stopsLen: state.stops.length,
+      settingsNomans: settings.nomans,
+      env: {
+        kvUrl: process.env.KV_REST_API_URL?.slice(0, 30),
+        nodeEnv: process.env.NODE_ENV,
+        vercelEnv: process.env.VERCEL_ENV,
+      },
+      ts: Date.now(),
+    };
+    await kv.set("nomans:debug:state-route-saw", payload);
+  } catch (e: any) {
+    await kv.set("nomans:debug:state-route-error", { msg: e?.message, ts: Date.now() }).catch(() => {});
+  }
   const isDriver = driverRef != null;
 
   const activeStops = state.stops.filter((s) => s.status === "queued" || s.status === "enroute");
