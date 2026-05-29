@@ -73,9 +73,18 @@ async function kvGet<T>(key: string): Promise<T | null> {
   const json = (await res.json()) as { result?: string | null };
   if (json.result == null) return null;
   try {
-    return JSON.parse(json.result) as T;
+    const first = JSON.parse(json.result);
+    // Heal legacy double-encoded writes (string of JSON inside a string)
+    if (typeof first === "string") {
+      try {
+        return JSON.parse(first) as T;
+      } catch {
+        return null;
+      }
+    }
+    return first as T;
   } catch {
-    return json.result as unknown as T;
+    return null;
   }
 }
 
