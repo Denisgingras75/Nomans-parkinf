@@ -30,18 +30,14 @@ export async function GET(req: NextRequest) {
     findFullDriver(driverParam),
   ]);
 
-  // TEMP probe — write what getState saw + what we're about to return
+  // TEMP probe — also do a direct kv.get to compare
   try {
-    const { kv } = await import("@vercel/kv");
+    const directRead = await kv.get("nomans:state:v1");
     const payload = {
-      shuttle: state.shuttle,
-      stopsLen: state.stops.length,
-      settingsNomans: settings.nomans,
-      env: {
-        kvUrl: process.env.KV_REST_API_URL?.slice(0, 30),
-        nodeEnv: process.env.NODE_ENV,
-        vercelEnv: process.env.VERCEL_ENV,
-      },
+      via_getState: state.shuttle,
+      via_direct_kv_get: directRead,
+      env_kv_url_present: Boolean(process.env.KV_REST_API_URL),
+      env_kv_token_present: Boolean(process.env.KV_REST_API_TOKEN),
       ts: Date.now(),
     };
     await kv.set("nomans:debug:state-route-saw", payload);
