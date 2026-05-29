@@ -7,15 +7,19 @@ import PlacesAutocomplete from "@/components/PlacesAutocomplete";
 
 const Map = dynamic(() => import("@/components/Map"), { ssr: false });
 
+type ShuttleFeed = {
+  id: string;
+  label: string | null;
+  position: LatLng | null;
+  heading: number | null;
+  speedMph: number | null;
+  updatedAt: number | null;
+};
+
 type StateResponse = {
-  shuttle: {
-    position: LatLng | null;
-    heading: number | null;
-    speedMph: number | null;
-    updatedAt: number | null;
-    onboard: number;
-    capacity: number;
-  };
+  shuttles: ShuttleFeed[];
+  onboard: number;
+  capacity: number;
   stops: { id: string; kind: "pickup" | "dropoff"; position: LatLng; status: string }[];
   nomans: LatLng;
   online: boolean;
@@ -38,6 +42,8 @@ export default function PassengerPage() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [stopId, setStopId] = useState<string | null>(null);
   const [state, setState] = useState<StateResponse | null>(null);
+  const [cancelling, setCancelling] = useState(false);
+  const [cancelNote, setCancelNote] = useState<string | null>(null);
 
   // Restore prior ping from localStorage so a reload doesn't lose the ETA.
   useEffect(() => {
@@ -122,18 +128,49 @@ export default function PassengerPage() {
     }
   };
 
-  const cancel = () => {
+  const clearLocal = () => {
     setStopId(null);
+    setCancelNote(null);
     localStorage.removeItem("nomans.stopId");
   };
 
+  const cancel = async () => {
+    if (!stopId) return clearLocal();
+    setCancelling(true);
+    setCancelNote(null);
+    try {
+      const res = await fetch(`/api/ping?stopId=${encodeURIComponent(stopId)}`, {
+        method: "DELETE",
+      });
+      if (res.ok) {
+        clearLocal();
+      } else if (res.status === 409) {
+        // Driver's already rolling — keep the ETA card, tell them to wave off.
+        const data = await res.json().catch(() => null);
+        setCancelNote(data?.error ?? "Too late to cancel — wave the driver off.");
+      } else {
+        // 404 (stop already gone) or anything else: just clear locally.
+        clearLocal();
+      }
+    } catch {
+      setCancelNote("Network error — try again.");
+    } finally {
+      setCancelling(false);
+    }
+  };
+
   const yours = state?.yours;
-  const shuttle = state?.shuttle.position ?? null;
-  const shuttleHeading = state?.shuttle.heading ?? null;
-  const shuttleSpeedMph = state?.shuttle.speedMph ?? null;
+  const shuttles = (state?.shuttles ?? []).filter(
+    (s): s is ShuttleFeed & { position: LatLng } => s.position != null,
+  );
   const nomans = state?.nomans ?? { lat: 41.4541, lng: -70.5605 };
-  const lastUpdateSec = state?.shuttle.updatedAt
-    ? Math.max(0, Math.round((Date.now() - state.shuttle.updatedAt) / 1000))
+  // Freshest fix across all live vans, for the "updated Ns ago" line.
+  const newestUpdate = shuttles.reduce<number | null>(
+    (max, s) => (s.updatedAt != null && (max == null || s.updatedAt > max) ? s.updatedAt : max),
+    null,
+  );
+  const lastUpdateSec = newestUpdate
+    ? Math.max(0, Math.round((Date.now() - newestUpdate) / 1000))
     : null;
 
   return (
@@ -277,20 +314,24 @@ export default function PassengerPage() {
 
       {stopId && (
         <div className="card">
-          <button className="secondary" onClick={cancel}>
-            Cancel this ride
+          <button className="secondary" disabled={cancelling} onClick={cancel}>
+            {cancelling ? "Cancelling…" : "Cancel this ride"}
           </button>
-          <div className="note" style={{ marginTop: 8 }}>
-            Heads up: cancelling just removes it locally. Wave the driver off if you're already on the curb.
-          </div>
+          {cancelNote ? (
+            <div className="note" style={{ marginTop: 8, color: "var(--danger)" }}>
+              {cancelNote}
+            </div>
+          ) : (
+            <div className="note" style={{ marginTop: 8 }}>
+              Cancelling pulls you out of the driver's queue. If you're already on the curb, wave the driver off too.
+            </div>
+          )}
         </div>
       )}
 
       <div className="card" style={{ padding: 8 }}>
         <Map
-          shuttle={shuttle}
-          shuttleHeading={shuttleHeading}
-          shuttleSpeedMph={shuttleSpeedMph}
+          shuttles={shuttles}
           nomans={nomans}
           me={me}
           stops={state?.stops ?? []}
@@ -304,7 +345,7 @@ export default function PassengerPage() {
           ? `Shuttle updated ${lastUpdateSec}s ago`
           : `Shuttle signal stale (${Math.round(lastUpdateSec / 60)} min)`}
         {" · "}
-        {state ? `${state.shuttle.onboard}/${state.shuttle.capacity} on board` : ""}
+        {state ? `${state.onboard}/${state.capacity} on board` : ""}
       </p>
     </main>
   );

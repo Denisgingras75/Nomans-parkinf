@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSettings, getState } from "@/lib/store";
+import { getSettings, getState, SHUTTLE_STALE_MS } from "@/lib/store";
 import { etaMinutes } from "@/lib/geofence";
 import { isOnlineNow } from "@/lib/schedule";
 import { findDriver, findFullDriver } from "@/lib/auth";
@@ -30,6 +30,13 @@ export async function GET(req: NextRequest) {
   ]);
   const isDriver = driverRef != null;
 
+  // Only surface vans that have a fix and have reported recently, so a
+  // parked/off van doesn't linger on the map.
+  const now = Date.now();
+  const liveShuttles = state.shuttles.filter(
+    (s) => s.position && s.updatedAt != null && now - s.updatedAt < SHUTTLE_STALE_MS,
+  );
+
   const activeStops = state.stops.filter((s) => s.status === "queued" || s.status === "enroute");
 
   const publicStops = activeStops.map((s) => ({
@@ -50,9 +57,11 @@ export async function GET(req: NextRequest) {
       const queuedAhead = activeStops.filter(
         (s) => s.kind === "pickup" && s.createdAt < me.createdAt,
       ).length;
+      // ETA from whichever live van is closest to the pickup.
       const eta =
-        state.shuttle.position && (me.status === "queued" || me.status === "enroute")
-          ? etaMinutes(state.shuttle.position, me.position) + queuedAhead * 3
+        liveShuttles.length && (me.status === "queued" || me.status === "enroute")
+          ? Math.min(...liveShuttles.map((s) => etaMinutes(s.position!, me.position))) +
+            queuedAhead * 3
           : null;
       yours = { etaMinutes: eta, position: queuedAhead + 1, status: me.status };
     }
@@ -68,7 +77,16 @@ export async function GET(req: NextRequest) {
     : null;
 
   return NextResponse.json({
-    shuttle: state.shuttle,
+    shuttles: liveShuttles.map((s) => ({
+      id: s.id,
+      label: s.label ?? null,
+      position: s.position,
+      heading: s.heading,
+      speedMph: s.speedMph,
+      updatedAt: s.updatedAt,
+    })),
+    onboard: state.onboard,
+    capacity: state.capacity,
     stops: publicStops,
     nomans: settings.nomans,
     online: isOnlineNow(settings),

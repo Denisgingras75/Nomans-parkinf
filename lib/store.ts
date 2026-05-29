@@ -1,4 +1,4 @@
-import type { AppState, Driver, LatLng, Manager, Settings, Stop, StopStatus } from "./types";
+import type { AppState, Driver, LatLng, Manager, Settings, ShuttleState, Stop, StopStatus } from "./types";
 import { DEFAULT_BOUNDS, DEFAULT_NOMANS } from "./geofence";
 import { DEFAULT_HOURS } from "./schedule";
 
@@ -60,15 +60,47 @@ const DEFAULT_SETTINGS: Settings = {
 
 function initState(): AppState {
   return {
-    shuttle: {
-      position: null,
-      heading: null,
-      speedMph: null,
-      updatedAt: null,
-      capacity: DEFAULT_SETTINGS.capacity,
-      onboard: 0,
-    },
+    shuttles: [],
+    capacity: DEFAULT_SETTINGS.capacity,
+    onboard: 0,
     stops: [],
+  };
+}
+
+// A van that hasn't reported in this long drops out of the public feed so a
+// parked/off van doesn't linger on the map.
+export const SHUTTLE_STALE_MS = 10 * 60 * 1000;
+
+// Heal the pre-two-shuttle KV shape ({ shuttle } singular, with capacity +
+// onboard living on the shuttle) into the keyed-by-id { shuttles } shape.
+// Mirrors the legacy-healing already done in kvGet.
+function migrateState(raw: any): AppState {
+  if (!raw || typeof raw !== "object") return initState();
+  if (Array.isArray(raw.shuttles)) {
+    // Already migrated; backfill the fleet pool if an older partial lacks it.
+    return {
+      shuttles: raw.shuttles,
+      capacity: typeof raw.capacity === "number" ? raw.capacity : DEFAULT_SETTINGS.capacity,
+      onboard: typeof raw.onboard === "number" ? raw.onboard : 0,
+      stops: Array.isArray(raw.stops) ? raw.stops : [],
+    };
+  }
+  const old = raw.shuttle;
+  return {
+    shuttles: old
+      ? [
+          {
+            id: "legacy",
+            position: old.position ?? null,
+            heading: old.heading ?? null,
+            speedMph: old.speedMph ?? null,
+            updatedAt: old.updatedAt ?? null,
+          },
+        ]
+      : [],
+    capacity: typeof old?.capacity === "number" ? old.capacity : DEFAULT_SETTINGS.capacity,
+    onboard: typeof old?.onboard === "number" ? old.onboard : 0,
+    stops: Array.isArray(raw.stops) ? raw.stops : [],
   };
 }
 
@@ -117,9 +149,9 @@ async function kvSet<T>(key: string, value: T): Promise<void> {
 // ---------- State (shuttle position + active queue) ----------
 
 async function readState(): Promise<AppState> {
-  if (useKV()) return (await kvGet<AppState>(KV_STATE_KEY)) ?? initState();
+  if (useKV()) return migrateState(await kvGet<any>(KV_STATE_KEY));
   if (!memory.__nomansState) memory.__nomansState = initState();
-  return memory.__nomansState;
+  return migrateState(memory.__nomansState);
 }
 
 async function writeState(state: AppState): Promise<void> {
@@ -131,9 +163,26 @@ export async function getState(): Promise<AppState> {
   return readState();
 }
 
-export async function updateShuttle(patch: Partial<AppState["shuttle"]>): Promise<void> {
+// Upsert a single vehicle's telemetry by id. Two vans on one Bouncie account
+// land as two entries instead of clobbering each other.
+export async function upsertShuttle(
+  id: string,
+  patch: Partial<Omit<ShuttleState, "id">>,
+): Promise<void> {
   const state = await readState();
-  Object.assign(state.shuttle, patch);
+  const existing = state.shuttles.find((s) => s.id === id);
+  if (existing) {
+    Object.assign(existing, patch);
+  } else {
+    state.shuttles.push({
+      id,
+      position: null,
+      heading: null,
+      speedMph: null,
+      updatedAt: null,
+      ...patch,
+    });
+  }
   await writeState(state);
 }
 
@@ -161,10 +210,10 @@ export async function setStopStatus(id: string, status: StopStatus): Promise<Sto
   stop.status = status;
   stop.updatedAt = Date.now();
   if (status === "picked-up" && stop.kind === "pickup") {
-    state.shuttle.onboard = Math.min(state.shuttle.capacity, state.shuttle.onboard + stop.partySize);
+    state.onboard = Math.min(state.capacity, state.onboard + stop.partySize);
   }
   if (status === "dropped-off") {
-    state.shuttle.onboard = Math.max(0, state.shuttle.onboard - stop.partySize);
+    state.onboard = Math.max(0, state.onboard - stop.partySize);
   }
   await writeState(state);
   if (status === "picked-up" || status === "dropped-off" || status === "cancelled") {
@@ -173,12 +222,48 @@ export async function setStopStatus(id: string, status: StopStatus): Promise<Sto
   return stop;
 }
 
+// Passenger self-cancel. Given a stop id the passenger holds (the random id
+// returned from /api/ping acts as their capability token), cancel every still-
+// active leg of that ride — both the pickup and the dropoff. Returns the
+// cancelled stops, [] if the ride is already past cancelling (picked-up or
+// terminal), or null if the id is unknown.
+export async function cancelRide(stopId: string): Promise<Stop[] | null> {
+  const state = await readState();
+  const target = state.stops.find((s) => s.id === stopId);
+  if (!target) return null;
+  // Once a leg is picked up (or already terminal) it's too late to self-cancel
+  // — the driver is mid-ride. They wave the driver off in person from here.
+  if (target.status !== "queued" && target.status !== "enroute") return [];
+
+  const now = Date.now();
+  // Match the whole ride by rideId; fall back to the single stop for legacy
+  // pings written before rideId existed.
+  const inRide = (s: Stop) =>
+    target.rideId ? s.rideId === target.rideId : s.id === target.id;
+
+  const cancelled: Stop[] = [];
+  for (const s of state.stops) {
+    if (inRide(s) && (s.status === "queued" || s.status === "enroute")) {
+      s.status = "cancelled";
+      s.updatedAt = now;
+      cancelled.push(s);
+    }
+  }
+  if (cancelled.length) {
+    await writeState(state);
+    for (const s of cancelled) await appendToRideArchive(s);
+  }
+  return cancelled;
+}
+
 export async function remainingCapacity(): Promise<number> {
   const state = await readState();
   const reservedPickups = state.stops
     .filter((s) => (s.status === "queued" || s.status === "enroute") && s.kind === "pickup")
     .reduce((sum, s) => sum + s.partySize, 0);
-  return Math.max(0, state.shuttle.capacity - state.shuttle.onboard - reservedPickups);
+  // TODO(two-shuttle): this is a fleet-wide pool, not per-van. Fine at current
+  // volume; revisit if overbooking one van becomes a real problem.
+  return Math.max(0, state.capacity - state.onboard - reservedPickups);
 }
 
 // ---------- Settings ----------
@@ -203,7 +288,7 @@ export async function updateSettings(patch: Partial<Settings>): Promise<Settings
     // Mirror capacity into live state so the on-board counter respects it
     // immediately, without waiting for a fresh state init.
     const state = await readState();
-    state.shuttle.capacity = next.capacity;
+    state.capacity = next.capacity;
     await writeState(state);
   }
 

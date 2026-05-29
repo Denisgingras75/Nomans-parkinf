@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { updateShuttle } from "@/lib/store";
+import { upsertShuttle } from "@/lib/store";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -47,7 +47,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, ignored: "no coordinates in payload" });
   }
 
-  await updateShuttle({
+  // Key the shuttle by its vehicle id so two vans on one Bouncie account
+  // each get their own marker instead of overwriting a single position.
+  // Falls back to a constant id for accounts that don't send a vehicle id.
+  const shuttleId = vehicleId ? String(vehicleId) : "bouncie";
+  await upsertShuttle(shuttleId, {
     position: { lat, lng },
     heading: heading ?? null,
     speedMph: speedMph ?? null,
