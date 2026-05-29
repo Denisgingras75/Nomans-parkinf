@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import "@vercel/kv"; // side-effect import so Next.js doesn't tree-shake kv out of this route's bundle (it's used transitively via lib/store)
 import { getSettings, getState } from "@/lib/store";
 import { etaMinutes } from "@/lib/geofence";
 import { isOnlineNow } from "@/lib/schedule";

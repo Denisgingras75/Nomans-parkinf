@@ -1,4 +1,3 @@
-import { kv } from "@vercel/kv";
 import type { AppState, Driver, LatLng, Settings, Stop, StopStatus } from "./types";
 import { DEFAULT_BOUNDS, DEFAULT_NOMANS } from "./geofence";
 import { DEFAULT_HOURS } from "./schedule";
@@ -59,21 +58,46 @@ function initState(): AppState {
   };
 }
 
+// Direct Upstash REST calls. Avoids @vercel/kv's import-time client
+// initialization which was causing cold-start instances to read env
+// vars before Vercel had fully injected them.
 async function kvGet<T>(key: string): Promise<T | null> {
-  return (await kv.get<T>(key)) ?? null;
+  const url = process.env.KV_REST_API_URL;
+  const token = process.env.KV_REST_API_TOKEN;
+  if (!url || !token) return null;
+  const res = await fetch(`${url}/get/${encodeURIComponent(key)}`, {
+    headers: { Authorization: `Bearer ${token}` },
+    cache: "no-store",
+  });
+  if (!res.ok) return null;
+  const json = (await res.json()) as { result?: string | null };
+  if (json.result == null) return null;
+  try {
+    return JSON.parse(json.result) as T;
+  } catch {
+    return json.result as unknown as T;
+  }
 }
 
 async function kvSet<T>(key: string, value: T): Promise<void> {
-  await kv.set(key, value);
+  const url = process.env.KV_REST_API_URL;
+  const token = process.env.KV_REST_API_TOKEN;
+  if (!url || !token) return;
+  await fetch(`${url}/set/${encodeURIComponent(key)}`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(JSON.stringify(value)),
+    cache: "no-store",
+  });
 }
 
 // ---------- State (shuttle position + active queue) ----------
 
 async function readState(): Promise<AppState> {
-  if (useKV()) {
-    const got = (await kv.get<AppState>(KV_STATE_KEY)) ?? null;
-    return got ?? initState();
-  }
+  if (useKV()) return (await kvGet<AppState>(KV_STATE_KEY)) ?? initState();
   if (!memory.__nomansState) memory.__nomansState = initState();
   return memory.__nomansState;
 }
