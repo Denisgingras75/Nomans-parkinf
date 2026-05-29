@@ -68,6 +68,18 @@ export default function AdminPage() {
   };
 
   useEffect(() => {
+    // Deep-link from a manager QR: ?code=MGR-XXXXXX (or scanned MGR-)
+    // — auto-fill, store, and unlock, then strip the param.
+    const url = new URL(window.location.href);
+    const code = url.searchParams.get("code");
+    if (code && code.startsWith("MGR-")) {
+      setPasscode(code);
+      localStorage.setItem("nomans.adminPass", code);
+      setAuthed(true);
+      url.searchParams.delete("code");
+      window.history.replaceState({}, "", url.toString());
+      return;
+    }
     const saved = localStorage.getItem("nomans.adminPass");
     if (saved) {
       setPasscode(saved);
@@ -447,8 +459,13 @@ export default function AdminPage() {
                   Revoke
                 </button>
               </div>
+              <CodeQR
+                kind="manager"
+                code={m.passcode}
+                hint="Show the manager this QR — their camera scans it and they're logged in."
+              />
               <div className="note" style={{ marginTop: 4 }}>
-                Added {new Date(m.createdAt).toLocaleDateString()} · Text them the code to log in at /admin.
+                Added {new Date(m.createdAt).toLocaleDateString()}
               </div>
             </div>
           ))}
@@ -549,8 +566,14 @@ export default function AdminPage() {
               )}
             </div>
 
+            <CodeQR
+              kind="driver"
+              code={d.passcode}
+              hint="Show the driver this QR — their camera scans it and they're logged in."
+            />
+
             <div className="note" style={{ marginTop: 4 }}>
-              Added {new Date(d.createdAt).toLocaleDateString()} · Text them the code to log in at /driver.
+              Added {new Date(d.createdAt).toLocaleDateString()}
             </div>
           </div>
         ))}
@@ -828,6 +851,68 @@ function CapacityEditor({
         <button onClick={() => onSave(value)} disabled={saving} style={{ width: "auto" }}>
           Save capacity
         </button>
+      </div>
+    </div>
+  );
+}
+
+// Tiny inline QR for a driver/manager onboarding code. The QR encodes
+// a deep link to /driver?code=... or /admin?code=... so scanning with
+// the phone camera unlocks the page directly. Uses goQR.me's free API
+// to avoid pulling in a client-side QR library — adds zero JS weight.
+function CodeQR({
+  kind,
+  code,
+  hint,
+}: {
+  kind: "driver" | "manager";
+  code: string;
+  hint: string;
+}) {
+  const [origin, setOrigin] = useState("");
+  useEffect(() => {
+    if (typeof window !== "undefined") setOrigin(window.location.origin);
+  }, []);
+  if (!origin) return null;
+  const path = kind === "driver" ? "/driver" : "/admin";
+  const deepLink = `${origin}${path}?code=${encodeURIComponent(code)}`;
+  const qrSrc = `https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(deepLink)}&size=140x140&margin=2`;
+  return (
+    <div
+      style={{
+        display: "flex",
+        gap: 12,
+        alignItems: "center",
+        marginTop: 10,
+        padding: 10,
+        background: "var(--bg)",
+        border: "1px solid var(--border)",
+        borderRadius: 8,
+      }}
+    >
+      <img
+        src={qrSrc}
+        alt={`Login QR for ${code}`}
+        width={120}
+        height={120}
+        // White background is intentional and must stay literal — a
+        // themed `var(--bg)` would be dark navy and break the contrast
+        // QR scanners rely on for reliable phone-camera reads.
+        style={{ background: "#ffffff", borderRadius: 6, padding: 4, flexShrink: 0 }}
+      />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div className="note" style={{ marginBottom: 4 }}>{hint}</div>
+        <div
+          className="note"
+          style={{
+            fontFamily: "ui-monospace, Menlo, monospace",
+            fontSize: 11,
+            wordBreak: "break-all",
+            color: "var(--muted-soft)",
+          }}
+        >
+          {deepLink}
+        </div>
       </div>
     </div>
   );

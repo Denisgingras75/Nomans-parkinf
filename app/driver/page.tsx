@@ -52,6 +52,20 @@ export default function DriverPage() {
   const watchIdRef = useRef<number | null>(null);
 
   useEffect(() => {
+    // Deep-link from a /admin QR code: ?code=NM-XXXXXX → auto-fill +
+    // unlock, then strip the param from the URL so it doesn't linger
+    // in history or bookmarks.
+    const url = new URL(window.location.href);
+    const code = url.searchParams.get("code");
+    if (code && code.startsWith("NM-")) {
+      setPasscode(code);
+      audioCtxRef.current = createChimeContext();
+      localStorage.setItem("nomans.driverPass", code);
+      setAuthed(true);
+      url.searchParams.delete("code");
+      window.history.replaceState({}, "", url.toString());
+      return;
+    }
     const saved = localStorage.getItem("nomans.driverPass");
     if (saved) {
       setPasscode(saved);
