@@ -1,3 +1,4 @@
+import { kv } from "@vercel/kv";
 import type { AppState, Driver, LatLng, Settings, Stop, StopStatus } from "./types";
 import { DEFAULT_BOUNDS, DEFAULT_NOMANS } from "./geofence";
 import { DEFAULT_HOURS } from "./schedule";
@@ -58,12 +59,10 @@ function initState(): AppState {
 }
 
 async function kvGet<T>(key: string): Promise<T | null> {
-  const { kv } = await import("@vercel/kv");
   return (await kv.get<T>(key)) ?? null;
 }
 
 async function kvSet<T>(key: string, value: T): Promise<void> {
-  const { kv } = await import("@vercel/kv");
   await kv.set(key, value);
 }
 
