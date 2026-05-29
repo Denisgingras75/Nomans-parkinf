@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSettings, getState, SHUTTLE_STALE_MS } from "@/lib/store";
+import { getSettings, getState } from "@/lib/store";
 import { etaMinutes } from "@/lib/geofence";
 import { isOnlineNow } from "@/lib/schedule";
 import { findDriver, findFullDriver } from "@/lib/auth";
@@ -30,12 +30,10 @@ export async function GET(req: NextRequest) {
   ]);
   const isDriver = driverRef != null;
 
-  // Only surface vans that have a fix and have reported recently, so a
-  // parked/off van doesn't linger on the map.
-  const now = Date.now();
-  const liveShuttles = state.shuttles.filter(
-    (s) => s.position && s.updatedAt != null && now - s.updatedAt < SHUTTLE_STALE_MS,
-  );
+  // Show every van's last-known position. Freshness is conveyed by the
+  // "signal stale (N min)" label the UI derives from updatedAt — we don't
+  // hide an idle/parked van, since Bouncie may go quiet between rides.
+  const liveShuttles = state.shuttles.filter((s) => s.position != null);
 
   const activeStops = state.stops.filter((s) => s.status === "queued" || s.status === "enroute");
 
