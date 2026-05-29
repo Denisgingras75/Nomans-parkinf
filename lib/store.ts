@@ -70,7 +70,10 @@ async function kvSet<T>(key: string, value: T): Promise<void> {
 // ---------- State (shuttle position + active queue) ----------
 
 async function readState(): Promise<AppState> {
-  if (useKV()) return (await kvGet<AppState>(KV_STATE_KEY)) ?? initState();
+  if (useKV()) {
+    const got = (await kv.get<AppState>(KV_STATE_KEY)) ?? null;
+    return got ?? initState();
+  }
   if (!memory.__nomansState) memory.__nomansState = initState();
   return memory.__nomansState;
 }
