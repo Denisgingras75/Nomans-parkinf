@@ -43,7 +43,7 @@ PR or continued work on this one.
 
 | Route | Method | Purpose | Auth |
 |-------|--------|---------|------|
-| `/api/ping` | POST | Create pickup + dropoff stops, dispatch SMS to on-shift drivers | none (geofence + capacity check) |
+| `/api/ping` | POST · DELETE | POST creates pickup + dropoff stops (linked by `rideId`) + dispatches alerts. DELETE `?stopId=` is passenger self-cancel — clears both legs from the queue (409 if already picked up). | none (stopId is the capability token) |
 | `/api/state` | GET | Public feed: shuttle position, active stops, online state, NoMans pin. `?stopId=` adds ETA. `?driver=<code>` unmasks names. | optional driver |
 | `/api/stops` | POST | Advance a stop's status (queued → enroute → picked-up → dropped-off / cancelled). Adjusts on-board count. | driver |
 | `/api/driver/location` | POST | Driver-phone GPS broadcast | driver |

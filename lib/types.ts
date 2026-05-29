@@ -47,6 +47,9 @@ export type StopStatus = "queued" | "enroute" | "picked-up" | "dropped-off" | "c
 
 export type Stop = {
   id: string;
+  // Links the pickup + dropoff legs created by a single passenger ping, so a
+  // passenger cancel can clear both. Optional: legacy stops predate it.
+  rideId?: string;
   kind: "pickup" | "dropoff";
   name: string;
   partySize: number;

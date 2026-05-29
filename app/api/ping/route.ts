@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { addStop, getDrivers, getSettings, remainingCapacity } from "@/lib/store";
+import { addStop, cancelRide, getDrivers, getSettings, remainingCapacity } from "@/lib/store";
 import { inBounds } from "@/lib/geofence";
 import { isOnlineNow } from "@/lib/schedule";
 import { normalizePhone, notifyOnShiftDrivers } from "@/lib/sms";
@@ -53,9 +53,13 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // One rideId ties the pickup + dropoff legs together so a passenger cancel
+  // can clear both.
+  const rideId = crypto.randomUUID();
   let pickupId: string;
   if (direction === "to-nomans") {
     const pickup = await addStop({
+      rideId,
       kind: "pickup",
       name,
       partySize,
@@ -64,6 +68,7 @@ export async function POST(req: NextRequest) {
       phone,
     });
     await addStop({
+      rideId,
       kind: "dropoff",
       name,
       partySize,
@@ -74,6 +79,7 @@ export async function POST(req: NextRequest) {
     pickupId = pickup.id;
   } else {
     const pickup = await addStop({
+      rideId,
       kind: "pickup",
       name,
       partySize,
@@ -82,6 +88,7 @@ export async function POST(req: NextRequest) {
       phone,
     });
     await addStop({
+      rideId,
       kind: "dropoff",
       name,
       partySize,
@@ -116,6 +123,28 @@ export async function POST(req: NextRequest) {
   }
 
   return NextResponse.json({ ok: true, stopId: pickupId });
+}
+
+// Passenger self-cancel. No auth: the random stopId from POST is the
+// capability token — only the passenger who pinged holds it. Cancels both
+// legs of the ride.
+export async function DELETE(req: NextRequest) {
+  const stopId = new URL(req.url).searchParams.get("stopId");
+  if (!stopId) {
+    return NextResponse.json({ error: "stopId required" }, { status: 400 });
+  }
+  const cancelled = await cancelRide(stopId);
+  if (cancelled === null) {
+    return NextResponse.json({ error: "ride not found" }, { status: 404 });
+  }
+  if (cancelled.length === 0) {
+    // Already picked up or otherwise too late to self-cancel.
+    return NextResponse.json(
+      { ok: false, error: "too late to cancel — your driver is on the way", code: "too-late" },
+      { status: 409 },
+    );
+  }
+  return NextResponse.json({ ok: true, cancelled: cancelled.length });
 }
 
 function clampInt(v: unknown, min: number, max: number): number {

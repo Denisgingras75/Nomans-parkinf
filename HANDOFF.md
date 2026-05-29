@@ -34,7 +34,7 @@ In rough order of leverage:
 
 1. **Smoke-test the QR codes on a real iPhone.** Should pre-fill and unlock. The deep-link handler is in `app/driver/page.tsx` (`?code=NM-...` branch in the first useEffect) and `app/admin/page.tsx` (`?code=MGR-...`).
 2. **Decommission Twilio once Push is verified working at the bar.** Either remove the SMS fan-out from `app/api/ping/route.ts` or hide it behind a feature flag. Cuts the monthly bill.
-3. **Real cancel from passenger.** Today's "Cancel this ride" only clears localStorage — server-side queue still has the stop. Hit `/api/stops` with `cancelled` status. (~15 min.)
+3. ✅ **Real cancel from passenger** — DONE. `DELETE /api/ping?stopId=` cancels both legs of the ride via `cancelRide()` in the store; pickup+dropoff are now linked by `rideId`. Returns 409 ("too late") once the leg is picked up, and the passenger page keeps the ETA card + tells them to wave the driver off. The stopId is the capability token (no driver auth).
 4. **"I'm stuck +10 min" driver affordance** from the review backlog.
 5. **Active rides view in /admin** so the owner can see pickups in flight (today's view only shows completed/cancelled rides).
 

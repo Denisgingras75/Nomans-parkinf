@@ -38,6 +38,8 @@ export default function PassengerPage() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [stopId, setStopId] = useState<string | null>(null);
   const [state, setState] = useState<StateResponse | null>(null);
+  const [cancelling, setCancelling] = useState(false);
+  const [cancelNote, setCancelNote] = useState<string | null>(null);
 
   // Restore prior ping from localStorage so a reload doesn't lose the ETA.
   useEffect(() => {
@@ -122,9 +124,35 @@ export default function PassengerPage() {
     }
   };
 
-  const cancel = () => {
+  const clearLocal = () => {
     setStopId(null);
+    setCancelNote(null);
     localStorage.removeItem("nomans.stopId");
+  };
+
+  const cancel = async () => {
+    if (!stopId) return clearLocal();
+    setCancelling(true);
+    setCancelNote(null);
+    try {
+      const res = await fetch(`/api/ping?stopId=${encodeURIComponent(stopId)}`, {
+        method: "DELETE",
+      });
+      if (res.ok) {
+        clearLocal();
+      } else if (res.status === 409) {
+        // Driver's already rolling — keep the ETA card, tell them to wave off.
+        const data = await res.json().catch(() => null);
+        setCancelNote(data?.error ?? "Too late to cancel — wave the driver off.");
+      } else {
+        // 404 (stop already gone) or anything else: just clear locally.
+        clearLocal();
+      }
+    } catch {
+      setCancelNote("Network error — try again.");
+    } finally {
+      setCancelling(false);
+    }
   };
 
   const yours = state?.yours;
@@ -277,12 +305,18 @@ export default function PassengerPage() {
 
       {stopId && (
         <div className="card">
-          <button className="secondary" onClick={cancel}>
-            Cancel this ride
+          <button className="secondary" disabled={cancelling} onClick={cancel}>
+            {cancelling ? "Cancelling…" : "Cancel this ride"}
           </button>
-          <div className="note" style={{ marginTop: 8 }}>
-            Heads up: cancelling just removes it locally. Wave the driver off if you're already on the curb.
-          </div>
+          {cancelNote ? (
+            <div className="note" style={{ marginTop: 8, color: "var(--danger)" }}>
+              {cancelNote}
+            </div>
+          ) : (
+            <div className="note" style={{ marginTop: 8 }}>
+              Cancelling pulls you out of the driver's queue. If you're already on the curb, wave the driver off too.
+            </div>
+          )}
         </div>
       )}
 

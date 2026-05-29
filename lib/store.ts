@@ -173,6 +173,40 @@ export async function setStopStatus(id: string, status: StopStatus): Promise<Sto
   return stop;
 }
 
+// Passenger self-cancel. Given a stop id the passenger holds (the random id
+// returned from /api/ping acts as their capability token), cancel every still-
+// active leg of that ride — both the pickup and the dropoff. Returns the
+// cancelled stops, [] if the ride is already past cancelling (picked-up or
+// terminal), or null if the id is unknown.
+export async function cancelRide(stopId: string): Promise<Stop[] | null> {
+  const state = await readState();
+  const target = state.stops.find((s) => s.id === stopId);
+  if (!target) return null;
+  // Once a leg is picked up (or already terminal) it's too late to self-cancel
+  // — the driver is mid-ride. They wave the driver off in person from here.
+  if (target.status !== "queued" && target.status !== "enroute") return [];
+
+  const now = Date.now();
+  // Match the whole ride by rideId; fall back to the single stop for legacy
+  // pings written before rideId existed.
+  const inRide = (s: Stop) =>
+    target.rideId ? s.rideId === target.rideId : s.id === target.id;
+
+  const cancelled: Stop[] = [];
+  for (const s of state.stops) {
+    if (inRide(s) && (s.status === "queued" || s.status === "enroute")) {
+      s.status = "cancelled";
+      s.updatedAt = now;
+      cancelled.push(s);
+    }
+  }
+  if (cancelled.length) {
+    await writeState(state);
+    for (const s of cancelled) await appendToRideArchive(s);
+  }
+  return cancelled;
+}
+
 export async function remainingCapacity(): Promise<number> {
   const state = await readState();
   const reservedPickups = state.stops
