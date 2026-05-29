@@ -28,19 +28,6 @@ export async function GET(req: NextRequest) {
     findDriver(driverParam),
     findFullDriver(driverParam),
   ]);
-
-  // TEMP DEBUG
-  try {
-    const { kv } = await import("@vercel/kv");
-    await kv.set("nomans:debug:state-route-saw", {
-      shuttle: state.shuttle,
-      stopsLength: state.stops.length,
-      useKVTruthy: Boolean(process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN),
-      timestamp: Date.now(),
-    });
-  } catch (e) {
-    /* ignore */
-  }
   const isDriver = driverRef != null;
 
   const activeStops = state.stops.filter((s) => s.status === "queued" || s.status === "enroute");
