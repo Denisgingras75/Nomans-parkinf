@@ -26,6 +26,14 @@ export type Driver = {
   createdAt: number;
 };
 
+export type Manager = {
+  id: string;
+  name: string;
+  passcode: string;       // "MGR-XXXXXX"
+  phone?: string | null;  // optional, not used for SMS today but room to grow
+  createdAt: number;
+};
+
 export type ShuttleState = {
   position: LatLng | null;
   heading: number | null;

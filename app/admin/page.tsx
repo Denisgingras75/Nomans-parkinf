@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { BBox, Driver, LatLng, ServiceHours, Settings, Stop } from "@/lib/types";
+import type { BBox, Driver, LatLng, Manager, ServiceHours, Settings, Stop } from "@/lib/types";
 import { createChimeContext, playChime } from "@/lib/chime";
 import PlacesAutocomplete from "@/components/PlacesAutocomplete";
 
@@ -15,6 +15,8 @@ type AdminState = {
   smsConfigured: boolean;
   shuttle: { onboard: number; capacity: number; position: LatLng | null; updatedAt: number | null };
   onlineReason: OnlineReason;
+  isBootstrap: boolean;
+  managers?: Manager[];
 };
 
 export default function AdminPage() {
@@ -31,6 +33,9 @@ export default function AdminPage() {
   const audioCtxRef = useRef<AudioContext | null>(null);
   const [smsTestStatus, setSmsTestStatus] = useState<string | null>(null);
   const [smsTesting, setSmsTesting] = useState(false);
+  const [newManagerName, setNewManagerName] = useState("");
+  const [newManagerPhone, setNewManagerPhone] = useState("");
+  const [addingManager, setAddingManager] = useState(false);
 
   const testChime = () => {
     if (!audioCtxRef.current) audioCtxRef.current = createChimeContext();
@@ -156,6 +161,46 @@ export default function AdminPage() {
       }
     } finally {
       setAddingDriver(false);
+    }
+  };
+
+  const addManager = async () => {
+    const name = newManagerName.trim();
+    if (!name) return;
+    setAddingManager(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/admin/managers", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-admin-passcode": passcode },
+        body: JSON.stringify({ name, phone: newManagerPhone.trim() || undefined }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setError(json.error ?? "Could not add manager");
+      } else if (data) {
+        setData({ ...data, managers: [...(data.managers ?? []), json.manager] });
+        setNewManagerName("");
+        setNewManagerPhone("");
+      }
+    } finally {
+      setAddingManager(false);
+    }
+  };
+
+  const revokeManager = async (id: string, name: string) => {
+    if (!confirm(`Revoke ${name}'s manager code? They won't be able to log in anymore.`)) return;
+    const res = await fetch(`/api/admin/managers?id=${encodeURIComponent(id)}`, {
+      method: "DELETE",
+      headers: { "x-admin-passcode": passcode },
+    });
+    if (!res.ok) {
+      const json = await res.json().catch(() => ({}));
+      setError(json.error ?? "Revoke failed");
+      return;
+    }
+    if (data) {
+      setData({ ...data, managers: (data.managers ?? []).filter((m) => m.id !== id) });
     }
   };
 
@@ -363,6 +408,71 @@ export default function AdminPage() {
           </button>
         </div>
       </div>
+
+      {/* Managers — only the bootstrap (env-var passcode) can see or
+          manage other managers. Hidden when a manager is logged in. */}
+      {data.isBootstrap && (
+        <div className="card">
+          <h2 style={{ margin: "0 0 8px" }}>Managers</h2>
+          <div className="note" style={{ marginBottom: 12 }}>
+            Staff who can log into <code>/admin</code> with their own code. Each has the same powers as you, except they can't see or manage this list. Add anyone you trust to add drivers, edit phones, send test SMS, etc.
+          </div>
+          {(data.managers ?? []).length === 0 && (
+            <div className="note" style={{ marginBottom: 12 }}>
+              No managers yet. Add one below — text them the <code>MGR-XXXXXX</code> code so they can unlock <code>/admin</code> on their phone.
+            </div>
+          )}
+          {(data.managers ?? []).map((m) => (
+            <div key={m.id} className="stop" style={{ marginBottom: 10 }}>
+              <div className="stop-head">
+                <div>
+                  <strong>{m.name}</strong>{" "}
+                  <span
+                    style={{
+                      color: "var(--accent)",
+                      fontFamily: "ui-monospace, Menlo, monospace",
+                    }}
+                  >
+                    {m.passcode}
+                  </span>
+                  {m.phone && (
+                    <span className="note" style={{ marginLeft: 8 }}>📱 {m.phone}</span>
+                  )}
+                </div>
+                <button
+                  className="danger"
+                  style={{ width: "auto", padding: "6px 10px", fontSize: 13 }}
+                  onClick={() => revokeManager(m.id, m.name)}
+                >
+                  Revoke
+                </button>
+              </div>
+              <div className="note" style={{ marginTop: 4 }}>
+                Added {new Date(m.createdAt).toLocaleDateString()} · Text them the code to log in at /admin.
+              </div>
+            </div>
+          ))}
+          <div className="row" style={{ marginTop: 8 }}>
+            <input
+              placeholder="Manager name"
+              value={newManagerName}
+              onChange={(e) => setNewManagerName(e.target.value)}
+            />
+            <input
+              placeholder="Phone (optional)"
+              value={newManagerPhone}
+              onChange={(e) => setNewManagerPhone(e.target.value)}
+            />
+          </div>
+          <button
+            style={{ marginTop: 8 }}
+            onClick={addManager}
+            disabled={addingManager || !newManagerName.trim()}
+          >
+            Add manager
+          </button>
+        </div>
+      )}
 
       {/* Drivers */}
       <div className="card">

@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getDrivers, getRideArchive, getSettings, getState, rideDayKey } from "@/lib/store";
-import { isAdmin } from "@/lib/auth";
+import {
+  getDrivers,
+  getManagers,
+  getRideArchive,
+  getSettings,
+  getState,
+  rideDayKey,
+} from "@/lib/store";
+import { isAdmin, isBootstrap } from "@/lib/auth";
 import { onlineReason } from "@/lib/schedule";
 import { smsConfigured } from "@/lib/sms";
 import type { Stop } from "@/lib/types";
@@ -11,7 +18,7 @@ export const dynamic = "force-dynamic";
 export async function GET(req: NextRequest) {
   const pass =
     req.headers.get("x-admin-passcode") ?? new URL(req.url).searchParams.get("passcode");
-  if (!isAdmin(pass)) {
+  if (!(await isAdmin(pass))) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
@@ -35,6 +42,9 @@ export async function GET(req: NextRequest) {
     ...liveToday,
   ].sort((a, b) => a.createdAt - b.createdAt);
 
+  const bootstrap = isBootstrap(pass);
+  const managers = bootstrap ? await getManagers() : undefined;
+
   return NextResponse.json({
     settings,
     drivers,
@@ -43,5 +53,7 @@ export async function GET(req: NextRequest) {
     smsConfigured: smsConfigured(),
     shuttle: state.shuttle,
     onlineReason: onlineReason(settings),
+    isBootstrap: bootstrap,
+    managers,
   });
 }

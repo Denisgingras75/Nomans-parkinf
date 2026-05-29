@@ -6,15 +6,15 @@ import { normalizePhone } from "@/lib/sms";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-function gate(req: NextRequest): NextResponse | null {
-  if (!isAdmin(req.headers.get("x-admin-passcode"))) {
+async function gate(req: NextRequest): Promise<NextResponse | null> {
+  if (!(await isAdmin(req.headers.get("x-admin-passcode")))) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
   return null;
 }
 
 export async function POST(req: NextRequest) {
-  const gated = gate(req);
+  const gated = await gate(req);
   if (gated) return gated;
   const body = await req.json().catch(() => null);
   const name = String(body?.name ?? "").trim().slice(0, 40);
@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
 }
 
 export async function PATCH(req: NextRequest) {
-  const gated = gate(req);
+  const gated = await gate(req);
   if (gated) return gated;
   const body = await req.json().catch(() => null);
   const id = String(body?.id ?? "");
@@ -62,7 +62,7 @@ export async function PATCH(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
-  const gated = gate(req);
+  const gated = await gate(req);
   if (gated) return gated;
   const id = new URL(req.url).searchParams.get("id");
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });

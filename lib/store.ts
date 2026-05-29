@@ -1,4 +1,4 @@
-import type { AppState, Driver, LatLng, Settings, Stop, StopStatus } from "./types";
+import type { AppState, Driver, LatLng, Manager, Settings, Stop, StopStatus } from "./types";
 import { DEFAULT_BOUNDS, DEFAULT_NOMANS } from "./geofence";
 import { DEFAULT_HOURS } from "./schedule";
 
@@ -19,6 +19,7 @@ import { DEFAULT_HOURS } from "./schedule";
 const KV_STATE_KEY = "nomans:state:v1";
 const KV_SETTINGS_KEY = "nomans:settings:v1";
 const KV_DRIVERS_KEY = "nomans:drivers:v1";
+const KV_MANAGERS_KEY = "nomans:managers:v1";
 const KV_PUSH_SUBS_KEY = "nomans:push-subs:v1";
 const KV_RIDES_PREFIX = "nomans:rides:"; // suffix: YYYY-MM-DD (Eastern)
 
@@ -33,6 +34,7 @@ const memory = globalThis as unknown as {
   __nomansState?: AppState;
   __nomansSettings?: Settings;
   __nomansDrivers?: Driver[];
+  __nomansManagers?: Manager[];
   __nomansRides?: Record<string, Stop[]>;
   __nomansPushSubs?: StoredPushSub[];
 };
@@ -291,6 +293,40 @@ async function appendToRideArchive(stop: Stop): Promise<void> {
   }
 }
 
+// ---------- Managers (staff admin) ----------
+
+export async function getManagers(): Promise<Manager[]> {
+  if (useKV()) return (await kvGet<Manager[]>(KV_MANAGERS_KEY)) ?? [];
+  return memory.__nomansManagers ?? [];
+}
+
+export async function addManager(input: {
+  name: string;
+  phone?: string | null;
+}): Promise<Manager> {
+  const managers = await getManagers();
+  const manager: Manager = {
+    id: cryptoRandomId(),
+    name: input.name.trim().slice(0, 40) || "Manager",
+    passcode: generateManagerCode(),
+    phone: input.phone ?? null,
+    createdAt: Date.now(),
+  };
+  managers.push(manager);
+  if (useKV()) await kvSet(KV_MANAGERS_KEY, managers);
+  else memory.__nomansManagers = managers;
+  return manager;
+}
+
+export async function removeManager(id: string): Promise<boolean> {
+  const managers = await getManagers();
+  const next = managers.filter((m) => m.id !== id);
+  if (next.length === managers.length) return false;
+  if (useKV()) await kvSet(KV_MANAGERS_KEY, next);
+  else memory.__nomansManagers = next;
+  return true;
+}
+
 // ---------- Push subscriptions (Web Push / VAPID) ----------
 
 export async function getPushSubscriptions(): Promise<StoredPushSub[]> {
@@ -329,10 +365,17 @@ function cryptoRandomId(): string {
 }
 
 function generateDriverCode(): string {
+  return `NM-${codeSuffix()}`;
+}
+
+function generateManagerCode(): string {
+  return `MGR-${codeSuffix()}`;
+}
+
+function codeSuffix(): string {
   // Crockford-ish alphabet — no 0/O/1/I to avoid sms confusion.
   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   const bytes = new Uint8Array(6);
   crypto.getRandomValues(bytes);
-  const suffix = Array.from(bytes, (b) => alphabet[b % alphabet.length]).join("");
-  return `NM-${suffix}`;
+  return Array.from(bytes, (b) => alphabet[b % alphabet.length]).join("");
 }

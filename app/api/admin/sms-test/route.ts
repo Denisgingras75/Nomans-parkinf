@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 // can verify the Twilio path before a real passenger pings.
 export async function POST(req: NextRequest) {
   const pass = req.headers.get("x-admin-passcode");
-  if (!isAdmin(pass)) {
+  if (!(await isAdmin(pass))) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 

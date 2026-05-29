@@ -1,13 +1,26 @@
-import { getDrivers } from "./store";
+import { getDrivers, getManagers } from "./store";
 import type { Driver } from "./types";
 
-// Admin gate. ADMIN_PASSCODE must be set in env. There is no way to
-// rotate it from the UI by design — that env var is the bootstrap
-// out of "lost everything" situations.
-export function isAdmin(passcode: string | null | undefined): boolean {
+// Bootstrap admin = the ADMIN_PASSCODE env var. Only this auth can
+// see, add, or revoke other managers (and can never be rotated from
+// the UI by design — env-only escape hatch).
+export function isBootstrap(passcode: string | null | undefined): boolean {
   const expected = process.env.ADMIN_PASSCODE;
   if (!expected || !passcode) return false;
   return safeEquals(String(passcode), expected);
+}
+
+// Any admin — bootstrap (Denis) OR a manager added in /admin (staff).
+// Used by all /api/admin/* endpoints except manager mgmt itself.
+export async function isAdmin(passcode: string | null | undefined): Promise<boolean> {
+  if (isBootstrap(passcode)) return true;
+  if (!passcode) return false;
+  const p = String(passcode);
+  const managers = await getManagers();
+  for (const m of managers) {
+    if (safeEquals(p, m.passcode)) return true;
+  }
+  return false;
 }
 
 // Driver gate. Checks the dynamic drivers list managed by admin, then

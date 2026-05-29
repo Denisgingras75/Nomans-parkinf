@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
   const pass = req.headers.get("x-admin-passcode");
-  if (!isAdmin(pass)) {
+  if (!(await isAdmin(pass))) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
