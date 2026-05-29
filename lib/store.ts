@@ -256,6 +256,71 @@ export async function cancelRide(stopId: string): Promise<Stop[] | null> {
   return cancelled;
 }
 
+type ClaimResult =
+  | { ok: true; legs: Stop[] }
+  | { ok: false; reason: "not-found" }
+  | { ok: false; reason: "claimed"; by?: string };
+
+// Driver claims (accepts) a whole ride — both the pickup and dropoff legs get
+// stamped with the driver, and queued legs flip to "accepted". A ride already
+// claimed by a *different* driver is refused so two vans don't both roll.
+export async function claimRide(
+  rideId: string,
+  driver: { id: string; name: string },
+): Promise<ClaimResult> {
+  const state = await readState();
+  const legs = state.stops.filter(
+    (s) => s.rideId === rideId && s.status !== "cancelled" && s.status !== "dropped-off",
+  );
+  if (legs.length === 0) return { ok: false, reason: "not-found" };
+  const taken = legs.find((s) => s.assignedDriverId && s.assignedDriverId !== driver.id);
+  if (taken) return { ok: false, reason: "claimed", by: taken.assignedDriverName };
+
+  const now = Date.now();
+  for (const s of legs) {
+    s.assignedDriverId = driver.id;
+    s.assignedDriverName = driver.name;
+    if (s.status === "queued") s.status = "accepted";
+    // Claiming a ride you'd previously dismissed un-dismisses it.
+    if (s.dismissedBy?.length) s.dismissedBy = s.dismissedBy.filter((id) => id !== driver.id);
+    s.updatedAt = now;
+  }
+  await writeState(state);
+  return { ok: true, legs };
+}
+
+// Driver declines a ride. If they'd claimed it, the claim is released back to
+// the queue so the other van can take it. If it's still unclaimed, it's just
+// dismissed from *this* driver's queue (stays live for everyone else).
+export async function declineRide(
+  rideId: string,
+  driver: { id: string; name: string },
+): Promise<{ ok: boolean; released: boolean }> {
+  const state = await readState();
+  const legs = state.stops.filter(
+    (s) => s.rideId === rideId && s.status !== "cancelled" && s.status !== "dropped-off",
+  );
+  if (legs.length === 0) return { ok: false, released: false };
+
+  const mine = legs.some((s) => s.assignedDriverId === driver.id);
+  const now = Date.now();
+  for (const s of legs) {
+    if (mine) {
+      if (s.assignedDriverId === driver.id) {
+        s.assignedDriverId = undefined;
+        s.assignedDriverName = undefined;
+        if (s.status === "accepted" || s.status === "enroute") s.status = "queued";
+        s.updatedAt = now;
+      }
+    } else if (!s.assignedDriverId) {
+      s.dismissedBy = Array.from(new Set([...(s.dismissedBy ?? []), driver.id]));
+      s.updatedAt = now;
+    }
+  }
+  await writeState(state);
+  return { ok: true, released: mine };
+}
+
 export async function remainingCapacity(): Promise<number> {
   const state = await readState();
   const reservedPickups = state.stops

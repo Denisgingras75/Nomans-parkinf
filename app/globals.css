@@ -268,6 +268,7 @@ button.ok:hover:not(:disabled) { background: #c89a44; }
   gap: 8px;
   flex-direction: column;
 }
+.stop.claimed-other { opacity: 0.6; border-style: dashed; }
 .stop-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .stop-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .stop-actions button { padding: 8px 10px; font-size: 12px; width: auto; }

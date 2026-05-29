@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSettings, getState, SHUTTLE_STALE_MS } from "@/lib/store";
+import { getSettings, getState } from "@/lib/store";
 import { etaMinutes } from "@/lib/geofence";
 import { isOnlineNow } from "@/lib/schedule";
 import { findDriver, findFullDriver } from "@/lib/auth";
@@ -30,17 +30,25 @@ export async function GET(req: NextRequest) {
   ]);
   const isDriver = driverRef != null;
 
-  // Only surface vans that have a fix and have reported recently, so a
-  // parked/off van doesn't linger on the map.
-  const now = Date.now();
-  const liveShuttles = state.shuttles.filter(
-    (s) => s.position && s.updatedAt != null && now - s.updatedAt < SHUTTLE_STALE_MS,
+  // Show every van's last-known position. Freshness is conveyed by the
+  // "signal stale (N min)" label the UI derives from updatedAt — we don't
+  // hide an idle/parked van, since Bouncie may go quiet between rides.
+  const liveShuttles = state.shuttles.filter((s) => s.position != null);
+
+  const myId = driverRef?.id ?? null;
+  const activeStops = state.stops.filter(
+    (s) => s.status === "queued" || s.status === "accepted" || s.status === "enroute",
   );
 
-  const activeStops = state.stops.filter((s) => s.status === "queued" || s.status === "enroute");
+  // Drivers don't see rides they personally dismissed (unless they later
+  // claimed them). Passengers see the full active set.
+  const visibleStops = activeStops.filter(
+    (s) => !(isDriver && s.dismissedBy?.includes(myId!) && s.assignedDriverId !== myId),
+  );
 
-  const publicStops = activeStops.map((s) => ({
+  const publicStops = visibleStops.map((s) => ({
     id: s.id,
+    rideId: isDriver ? s.rideId : undefined,
     kind: s.kind,
     partySize: s.partySize,
     status: s.status,
@@ -48,22 +56,38 @@ export async function GET(req: NextRequest) {
     name: isDriver ? s.name : undefined,
     note: isDriver ? s.note : undefined,
     phone: isDriver ? s.phone ?? null : undefined,
+    assignedDriverId: isDriver ? s.assignedDriverId ?? null : undefined,
+    assignedDriverName: isDriver ? s.assignedDriverName ?? null : undefined,
   }));
 
-  let yours: { etaMinutes: number | null; position: number; status: string } | null = null;
+  let yours:
+    | { etaMinutes: number | null; position: number; status: string; driverName: string | null }
+    | null = null;
   if (stopId) {
     const me = state.stops.find((s) => s.id === stopId);
     if (me) {
       const queuedAhead = activeStops.filter(
         (s) => s.kind === "pickup" && s.createdAt < me.createdAt,
       ).length;
-      // ETA from whichever live van is closest to the pickup.
+      // Prefer the assigned driver's own van (when they're broadcasting their
+      // phone GPS) for ETA; otherwise fall back to the nearest live van.
+      const assignedVan = me.assignedDriverId
+        ? liveShuttles.find((s) => s.id === `phone:${me.assignedDriverId}`)
+        : undefined;
+      const etaSource = assignedVan ? [assignedVan] : liveShuttles;
+      const enRoute =
+        me.status === "queued" || me.status === "accepted" || me.status === "enroute";
       const eta =
-        liveShuttles.length && (me.status === "queued" || me.status === "enroute")
-          ? Math.min(...liveShuttles.map((s) => etaMinutes(s.position!, me.position))) +
+        etaSource.length && enRoute
+          ? Math.min(...etaSource.map((s) => etaMinutes(s.position!, me.position))) +
             queuedAhead * 3
           : null;
-      yours = { etaMinutes: eta, position: queuedAhead + 1, status: me.status };
+      yours = {
+        etaMinutes: eta,
+        position: queuedAhead + 1,
+        status: me.status,
+        driverName: me.assignedDriverName ?? null,
+      };
     }
   }
 

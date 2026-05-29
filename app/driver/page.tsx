@@ -9,13 +9,16 @@ const Map = dynamic(() => import("@/components/Map"), { ssr: false });
 
 type Stop = {
   id: string;
+  rideId?: string;
   kind: "pickup" | "dropoff";
   partySize: number;
-  status: "queued" | "enroute" | "picked-up" | "dropped-off" | "cancelled";
+  status: "queued" | "accepted" | "enroute" | "picked-up" | "dropped-off" | "cancelled";
   position: LatLng;
   name?: string;
   note?: string;
   phone?: string | null;
+  assignedDriverId?: string | null;
+  assignedDriverName?: string | null;
 };
 
 type ShuttleFeed = {
@@ -265,6 +268,21 @@ export default function DriverPage() {
     }
   };
 
+  // Accept (claim) or decline a whole ride — both legs move together.
+  const claim = async (rideId: string | undefined, action: "accept" | "decline") => {
+    if (!rideId) return;
+    setError(null);
+    const res = await fetch("/api/stops", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action, rideId, passcode }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setError(data.error ?? "Action failed");
+    }
+  };
+
   // ----- Driver-phone GPS broadcast -----
   const startBroadcast = () => {
     setBroadcastError(null);
@@ -481,44 +499,73 @@ export default function DriverPage() {
           {queued.length === 0 && <div className="card note">Nothing queued. Cruise the loop.</div>}
           {queued.map((s) => {
             const navUrl = `https://www.google.com/maps/dir/?api=1&destination=${s.position.lat},${s.position.lng}`;
+            const myId = state?.me?.id;
+            const mine = !!s.assignedDriverId && s.assignedDriverId === myId;
+            const claimedByOther = !!s.assignedDriverId && !mine;
+            const unclaimed = !s.assignedDriverId;
             return (
-              <div key={s.id} className="stop">
+              <div key={s.id} className={`stop${claimedByOther ? " claimed-other" : ""}`}>
                 <div className="stop-head">
                   <div>
                     <span className={`tag ${s.kind}`}>{s.kind}</span>{" "}
                     <strong>{s.name ?? "Guest"}</strong>{" "}
                     <span className="note">× {s.partySize}</span>
                   </div>
-                  <span className={`tag ${s.status === "enroute" ? "enroute" : "queued"}`}>{s.status}</span>
+                  <span className={`tag ${s.status === "queued" ? "queued" : "enroute"}`}>{s.status}</span>
                 </div>
                 {s.note && <div className="note">&ldquo;{s.note}&rdquo;</div>}
-                {s.phone && (
-                  <div className="stop-actions">
-                    <a className="contact-link" href={`tel:${s.phone}`}>📞 Call {s.phone}</a>
-                    <a className="contact-link" href={`sms:${s.phone}`}>💬 Text</a>
+
+                {claimedByOther ? (
+                  <div className="note" style={{ marginTop: 8 }}>
+                    🔒 {s.assignedDriverName ?? "Another driver"} has this one.
                   </div>
+                ) : (
+                  <>
+                    {s.phone && mine && (
+                      <div className="stop-actions">
+                        <a className="contact-link" href={`tel:${s.phone}`}>📞 Call {s.phone}</a>
+                        <a className="contact-link" href={`sms:${s.phone}`}>💬 Text</a>
+                      </div>
+                    )}
+                    <div className="stop-actions">
+                      <a className="nav-link" href={navUrl} target="_blank" rel="noopener noreferrer">
+                        🧭 Navigate
+                      </a>
+
+                      {/* Unclaimed: accept/decline the whole ride from its pickup leg. */}
+                      {unclaimed && s.kind === "pickup" && (
+                        <>
+                          <button className="ok" onClick={() => claim(s.rideId, "accept")}>
+                            ✅ Accept
+                          </button>
+                          <button className="secondary" onClick={() => claim(s.rideId, "decline")}>
+                            Decline
+                          </button>
+                        </>
+                      )}
+
+                      {/* My ride: the pickup → dropoff flow + release back to queue. */}
+                      {mine && (s.status === "queued" || s.status === "accepted") && (
+                        <button onClick={() => advance(s.id, "enroute")}>Mark en route</button>
+                      )}
+                      {mine && s.kind === "pickup" && s.status !== "picked-up" && (
+                        <button className="ok" onClick={() => advance(s.id, "picked-up")}>
+                          Picked up
+                        </button>
+                      )}
+                      {mine && s.kind === "dropoff" && (
+                        <button className="ok" onClick={() => advance(s.id, "dropped-off")}>
+                          Dropped off
+                        </button>
+                      )}
+                      {mine && (
+                        <button className="secondary" onClick={() => claim(s.rideId, "decline")}>
+                          Release
+                        </button>
+                      )}
+                    </div>
+                  </>
                 )}
-                <div className="stop-actions">
-                  <a className="nav-link" href={navUrl} target="_blank" rel="noopener noreferrer">
-                    🧭 Navigate
-                  </a>
-                  {s.status === "queued" && (
-                    <button onClick={() => advance(s.id, "enroute")}>Mark en route</button>
-                  )}
-                  {s.kind === "pickup" && s.status !== "picked-up" && (
-                    <button className="ok" onClick={() => advance(s.id, "picked-up")}>
-                      Picked up
-                    </button>
-                  )}
-                  {s.kind === "dropoff" && (
-                    <button className="ok" onClick={() => advance(s.id, "dropped-off")}>
-                      Dropped off
-                    </button>
-                  )}
-                  <button className="secondary" onClick={() => advance(s.id, "cancelled")}>
-                    Cancel
-                  </button>
-                </div>
               </div>
             );
           })}
