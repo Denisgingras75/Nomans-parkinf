@@ -21,7 +21,11 @@ const KV_SETTINGS_KEY = "nomans:settings:v1";
 const KV_DRIVERS_KEY = "nomans:drivers:v1";
 const KV_RIDES_PREFIX = "nomans:rides:"; // suffix: YYYY-MM-DD (Eastern)
 
-const useKV = Boolean(process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN);
+// Evaluate at call time, not module load — guards against env vars being
+// injected after the bundle is initialized in some serverless runtimes.
+function useKV(): boolean {
+  return Boolean(process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN);
+}
 
 const memory = globalThis as unknown as {
   __nomansState?: AppState;
@@ -66,13 +70,13 @@ async function kvSet<T>(key: string, value: T): Promise<void> {
 // ---------- State (shuttle position + active queue) ----------
 
 async function readState(): Promise<AppState> {
-  if (useKV) return (await kvGet<AppState>(KV_STATE_KEY)) ?? initState();
+  if (useKV()) return (await kvGet<AppState>(KV_STATE_KEY)) ?? initState();
   if (!memory.__nomansState) memory.__nomansState = initState();
   return memory.__nomansState;
 }
 
 async function writeState(state: AppState): Promise<void> {
-  if (useKV) await kvSet(KV_STATE_KEY, state);
+  if (useKV()) await kvSet(KV_STATE_KEY, state);
   else memory.__nomansState = state;
 }
 
@@ -136,7 +140,7 @@ export async function getSettings(): Promise<Settings> {
   // Merge stored partial settings on top of defaults so fields added in
   // later versions (e.g. alertsEnabled) get sensible defaults for
   // installs that have already written settings to KV.
-  if (useKV) {
+  if (useKV()) {
     const stored = await kvGet<Partial<Settings>>(KV_SETTINGS_KEY);
     return { ...DEFAULT_SETTINGS, ...(stored ?? {}) };
   }
@@ -156,7 +160,7 @@ export async function updateSettings(patch: Partial<Settings>): Promise<Settings
     await writeState(state);
   }
 
-  if (useKV) await kvSet(KV_SETTINGS_KEY, next);
+  if (useKV()) await kvSet(KV_SETTINGS_KEY, next);
   else memory.__nomansSettings = next;
   return next;
 }
@@ -164,7 +168,7 @@ export async function updateSettings(patch: Partial<Settings>): Promise<Settings
 // ---------- Drivers ----------
 
 export async function getDrivers(): Promise<Driver[]> {
-  if (useKV) return (await kvGet<Driver[]>(KV_DRIVERS_KEY)) ?? [];
+  if (useKV()) return (await kvGet<Driver[]>(KV_DRIVERS_KEY)) ?? [];
   return memory.__nomansDrivers ?? [];
 }
 
@@ -179,7 +183,7 @@ export async function addDriver(input: { name: string; phone?: string | null }):
     createdAt: Date.now(),
   };
   drivers.push(driver);
-  if (useKV) await kvSet(KV_DRIVERS_KEY, drivers);
+  if (useKV()) await kvSet(KV_DRIVERS_KEY, drivers);
   else memory.__nomansDrivers = drivers;
   return driver;
 }
@@ -194,7 +198,7 @@ export async function updateDriver(
   if (patch.name !== undefined) driver.name = patch.name.trim().slice(0, 40) || driver.name;
   if (patch.phone !== undefined) driver.phone = patch.phone || null;
   if (patch.onShift !== undefined) driver.onShift = Boolean(patch.onShift);
-  if (useKV) await kvSet(KV_DRIVERS_KEY, drivers);
+  if (useKV()) await kvSet(KV_DRIVERS_KEY, drivers);
   else memory.__nomansDrivers = drivers;
   return driver;
 }
@@ -203,7 +207,7 @@ export async function removeDriver(id: string): Promise<boolean> {
   const drivers = await getDrivers();
   const next = drivers.filter((d) => d.id !== id);
   if (next.length === drivers.length) return false;
-  if (useKV) await kvSet(KV_DRIVERS_KEY, next);
+  if (useKV()) await kvSet(KV_DRIVERS_KEY, next);
   else memory.__nomansDrivers = next;
   return true;
 }
@@ -222,7 +226,7 @@ export function rideDayKey(now: Date = new Date()): string {
 }
 
 export async function getRideArchive(day: string = rideDayKey()): Promise<Stop[]> {
-  if (useKV) return (await kvGet<Stop[]>(`${KV_RIDES_PREFIX}${day}`)) ?? [];
+  if (useKV()) return (await kvGet<Stop[]>(`${KV_RIDES_PREFIX}${day}`)) ?? [];
   return memory.__nomansRides?.[day] ?? [];
 }
 
@@ -231,7 +235,7 @@ async function appendToRideArchive(stop: Stop): Promise<void> {
   const key = `${KV_RIDES_PREFIX}${day}`;
   // Replace by id so a stop moving through multiple terminal statuses
   // (e.g. picked-up → dropped-off) ends up with only the latest snapshot.
-  if (useKV) {
+  if (useKV()) {
     const current = (await kvGet<Stop[]>(key)) ?? [];
     const next = [...current.filter((s) => s.id !== stop.id), stop];
     await kvSet(key, next);
