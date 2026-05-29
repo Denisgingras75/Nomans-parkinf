@@ -19,7 +19,14 @@ type Stop = {
 };
 
 type StateResponse = {
-  shuttle: { position: LatLng | null; updatedAt: number | null; onboard: number; capacity: number };
+  shuttle: {
+    position: LatLng | null;
+    heading: number | null;
+    speedMph: number | null;
+    updatedAt: number | null;
+    onboard: number;
+    capacity: number;
+  };
   stops: Stop[];
   nomans: LatLng;
   me: { id: string; name: string; onShift: boolean; phone: string | null } | null;
@@ -216,6 +223,8 @@ export default function DriverPage() {
   const stops = state?.stops ?? [];
   const queued = stops.filter((s) => s.status === "queued" || s.status === "enroute");
   const shuttle = state?.shuttle.position ?? null;
+  const shuttleHeading = state?.shuttle.heading ?? null;
+  const shuttleSpeedMph = state?.shuttle.speedMph ?? null;
   const nomans = state?.nomans ?? { lat: 41.4541, lng: -70.5605 };
   const updatedAgo =
     state?.shuttle.updatedAt != null ? Math.round((Date.now() - state.shuttle.updatedAt) / 1000) : null;
@@ -357,7 +366,7 @@ export default function DriverPage() {
 
         <div>
           <h2>Map</h2>
-          <Map shuttle={shuttle} nomans={nomans} stops={queued} className="map map-driver" />
+          <Map shuttle={shuttle} shuttleHeading={shuttleHeading} shuttleSpeedMph={shuttleSpeedMph} nomans={nomans} stops={queued} className="map map-driver" />
         </div>
       </div>
     </main>

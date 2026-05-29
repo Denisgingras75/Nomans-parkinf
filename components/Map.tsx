@@ -13,21 +13,43 @@ type MapStop = {
 
 type Props = {
   shuttle: LatLng | null;
+  shuttleHeading?: number | null;
+  shuttleSpeedMph?: number | null;
   nomans: LatLng;
   me?: LatLng | null;
   stops?: MapStop[];
   className?: string;
 };
 
-export default function Map({ shuttle, nomans, me, stops = [], className }: Props) {
+// Leaflet's divIcon HTML inherits :root vars from globals.css, so use
+// var() refs directly instead of hardcoding hex.
+const C = {
+  rust: "var(--accent)",
+  gilt: "var(--gilt)",
+  chart: "var(--chart)",
+  bone: "var(--text-bright)",
+  paperDeep: "var(--bg-deep)",
+};
+
+const TRAIL_MAX = 24; // ~2 min of breadcrumbs if Bouncie pings every 5s
+
+export default function Map({
+  shuttle,
+  shuttleHeading,
+  shuttleSpeedMph,
+  nomans,
+  me,
+  stops = [],
+  className,
+}: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
   const leafletRef = useRef<any>(null);
   const layersRef = useRef<any[]>([]);
   const iconsRef = useRef<Record<string, any>>({});
+  const trailRef = useRef<LatLng[]>([]);
 
-  // One-time map initialization. Leaflet touches `window` so we have to
-  // dynamic-import it inside an effect.
+  // One-time map initialization. Leaflet touches `window` so dynamic-import in effect.
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -36,19 +58,18 @@ export default function Map({ shuttle, nomans, me, stops = [], className }: Prop
       if (cancelled) return;
       leafletRef.current = L;
 
-      const dot = (color: string) =>
+      const dot = (color: string, size = 18) =>
         L.divIcon({
           className: "nomans-marker",
-          html: `<div style="width:18px;height:18px;border-radius:50%;background:${color};border:3px solid #0e1116;box-shadow:0 0 0 1px rgba(0,0,0,0.35)"></div>`,
-          iconSize: [18, 18],
-          iconAnchor: [9, 9],
+          html: `<div style="width:${size}px;height:${size}px;border-radius:50%;background:${color};border:3px solid ${C.paperDeep};box-shadow:0 0 0 1px rgba(0,0,0,0.45)"></div>`,
+          iconSize: [size, size],
+          iconAnchor: [size / 2, size / 2],
         });
       iconsRef.current = {
-        shuttle: dot("#f2a93b"),
-        nomans: dot("#3fb950"),
-        me: dot("#58a6ff"),
-        pickup: dot("#3fb950"),
-        dropoff: dot("#f2a93b"),
+        nomans: dot(C.gilt, 20),
+        me: dot(C.chart),
+        pickup: dot(C.gilt),
+        dropoff: dot(C.rust),
       };
 
       const center = shuttle ?? me ?? nomans;
@@ -70,20 +91,48 @@ export default function Map({ shuttle, nomans, me, stops = [], className }: Prop
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Redraw on any prop change. JSON.stringify of stops keeps the effect
-  // identity stable when the parent re-renders with equal data.
+  // Track shuttle position history for the breadcrumb trail. Only append
+  // if the new fix is meaningfully different from the last (skips jitter).
+  useEffect(() => {
+    if (!shuttle) return;
+    const last = trailRef.current[trailRef.current.length - 1];
+    if (!last || Math.abs(last.lat - shuttle.lat) > 0.00005 || Math.abs(last.lng - shuttle.lng) > 0.00005) {
+      trailRef.current = [...trailRef.current, shuttle].slice(-TRAIL_MAX);
+    }
+  }, [shuttle?.lat, shuttle?.lng]);
+
+  // Redraw on any prop change.
   useEffect(() => {
     redraw();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     shuttle?.lat,
     shuttle?.lng,
+    shuttleHeading,
     me?.lat,
     me?.lng,
     nomans.lat,
     nomans.lng,
     JSON.stringify(stops.map((s) => [s.id, s.position.lat, s.position.lng, s.status, s.name])),
   ]);
+
+  function shuttleMarkerHtml(heading: number | null | undefined): string {
+    const rot = typeof heading === "number" && Number.isFinite(heading) ? heading : null;
+    // Arrow points up by default; CSS rotate aligns to compass heading.
+    // When heading is unknown, render a plain dot.
+    if (rot === null) {
+      return `<div style="width:20px;height:20px;border-radius:50%;background:${C.rust};border:3px solid ${C.paperDeep};box-shadow:0 0 0 1px rgba(0,0,0,0.45)"></div>`;
+    }
+    return `
+      <div style="position:relative;width:32px;height:32px;">
+        <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;transform:rotate(${rot}deg);transform-origin:50% 50%;">
+          <svg width="28" height="28" viewBox="0 0 28 28" xmlns="http://www.w3.org/2000/svg">
+            <path d="M14 2 L23 24 L14 19 L5 24 Z" fill="${C.rust}" stroke="${C.paperDeep}" stroke-width="1.5" stroke-linejoin="round"/>
+          </svg>
+        </div>
+      </div>
+    `;
+  }
 
   function redraw() {
     const L = leafletRef.current;
@@ -99,8 +148,39 @@ export default function Map({ shuttle, nomans, me, stops = [], className }: Prop
       layersRef.current.push(marker);
     };
 
+    // Breadcrumb polyline — fade older segments using opacity.
+    const trail = trailRef.current;
+    if (trail.length >= 2) {
+      for (let i = 1; i < trail.length; i++) {
+        const opacity = 0.18 + 0.62 * (i / trail.length);
+        const seg = L.polyline(
+          [
+            [trail[i - 1].lat, trail[i - 1].lng],
+            [trail[i].lat, trail[i].lng],
+          ],
+          { color: C.rust, weight: 4, opacity, lineCap: "round" },
+        ).addTo(map);
+        layersRef.current.push(seg);
+      }
+    }
+
     add(nomans, iconsRef.current.nomans, "NoMans Restaurant");
-    if (shuttle) add(shuttle, iconsRef.current.shuttle, "Combi shuttle");
+    if (shuttle) {
+      const shuttleIcon = L.divIcon({
+        className: "nomans-shuttle-marker",
+        html: shuttleMarkerHtml(shuttleHeading),
+        iconSize: [32, 32],
+        iconAnchor: [16, 16],
+      });
+      const speedLabel =
+        typeof shuttleSpeedMph === "number" && Number.isFinite(shuttleSpeedMph)
+          ? `Combi · ${Math.round(shuttleSpeedMph)} mph`
+          : "Combi shuttle";
+      const marker = L.marker([shuttle.lat, shuttle.lng], { icon: shuttleIcon })
+        .addTo(map)
+        .bindTooltip(speedLabel, { direction: "top", offset: [0, -12] });
+      layersRef.current.push(marker);
+    }
     if (me) add(me, iconsRef.current.me, "You");
     for (const s of stops) {
       add(

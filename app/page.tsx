@@ -8,7 +8,14 @@ import PlacesAutocomplete from "@/components/PlacesAutocomplete";
 const Map = dynamic(() => import("@/components/Map"), { ssr: false });
 
 type StateResponse = {
-  shuttle: { position: LatLng | null; updatedAt: number | null; onboard: number; capacity: number };
+  shuttle: {
+    position: LatLng | null;
+    heading: number | null;
+    speedMph: number | null;
+    updatedAt: number | null;
+    onboard: number;
+    capacity: number;
+  };
   stops: { id: string; kind: "pickup" | "dropoff"; position: LatLng; status: string }[];
   nomans: LatLng;
   online: boolean;
@@ -122,6 +129,8 @@ export default function PassengerPage() {
 
   const yours = state?.yours;
   const shuttle = state?.shuttle.position ?? null;
+  const shuttleHeading = state?.shuttle.heading ?? null;
+  const shuttleSpeedMph = state?.shuttle.speedMph ?? null;
   const nomans = state?.nomans ?? { lat: 41.4541, lng: -70.5605 };
   const lastUpdateSec = state?.shuttle.updatedAt
     ? Math.max(0, Math.round((Date.now() - state.shuttle.updatedAt) / 1000))
@@ -280,6 +289,8 @@ export default function PassengerPage() {
       <div className="card" style={{ padding: 8 }}>
         <Map
           shuttle={shuttle}
+          shuttleHeading={shuttleHeading}
+          shuttleSpeedMph={shuttleSpeedMph}
           nomans={nomans}
           me={me}
           stops={state?.stops ?? []}
