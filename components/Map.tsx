@@ -80,31 +80,48 @@ export default function Map({
       const center = shuttles[0]?.position ?? me ?? nomans;
       const map = L.map(containerRef.current).setView([center.lat, center.lng], 14);
 
-      // Tile layer selection: Google Maps if a browser-restricted JS API
-      // key is configured (set NEXT_PUBLIC_GOOGLE_MAPS_KEY + enable Maps
-      // JavaScript API on the key), otherwise CartoDB Dark Matter as
-      // the free no-key fallback that matches the almanac palette.
+      // ALWAYS lay down CartoDB Dark Matter first as a guaranteed base — it
+      // needs no key and matches the palette. Google Maps then overlays on
+      // top when a key is configured. If Google fails for ANY reason (script
+      // blocked, Maps JS API not enabled on the key, billing/quota), Carto
+      // shows through instead of leaving a blank/gray map.
+      L.tileLayer(
+        "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
+        {
+          maxZoom: 19,
+          subdomains: "abcd",
+          attribution:
+            '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
+        },
+      ).addTo(map);
+
       const gmapsKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY;
       if (gmapsKey) {
-        await ensureGoogleMapsScript(gmapsKey);
-        if (cancelled) return;
-        // GoogleMutant lazy-imported so its side-effect L.gridLayer
-        // augmentation only happens when we actually use it.
-        // @ts-ignore — plugin ships without TS types
-        await import("leaflet.gridlayer.googlemutant");
-        (L as any).gridLayer
-          .googleMutant({ type: "roadmap", maxZoom: 21 })
-          .addTo(map);
-      } else {
-        L.tileLayer(
-          "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
-          {
-            maxZoom: 19,
-            subdomains: "abcd",
-            attribution:
-              '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
-          },
-        ).addTo(map);
+        let gmLayer: any = null;
+        // Google calls this global when the key is rejected (API not enabled,
+        // referrer blocked, quota exceeded). Drop the Google layer so the
+        // CartoDB base underneath stays visible.
+        (window as any).gm_authFailure = () => {
+          if (gmLayer) {
+            try {
+              map.removeLayer(gmLayer);
+            } catch {
+              /* already gone */
+            }
+          }
+        };
+        try {
+          await ensureGoogleMapsScript(gmapsKey);
+          if (cancelled) return;
+          // GoogleMutant lazy-imported so its side-effect L.gridLayer
+          // augmentation only happens when we actually use it.
+          // @ts-ignore — plugin ships without TS types
+          await import("leaflet.gridlayer.googlemutant");
+          gmLayer = (L as any).gridLayer.googleMutant({ type: "roadmap", maxZoom: 21 });
+          gmLayer.addTo(map);
+        } catch {
+          // Script failed to load outright — CartoDB base is already showing.
+        }
       }
       mapRef.current = map;
       redraw();
