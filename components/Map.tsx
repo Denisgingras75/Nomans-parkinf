@@ -74,17 +74,33 @@ export default function Map({
 
       const center = shuttle ?? me ?? nomans;
       const map = L.map(containerRef.current).setView([center.lat, center.lng], 14);
-      // CartoDB Dark Matter — free, no API key, dark theme that blends
-      // with the almanac UI. Retina-aware via {r} placeholder.
-      L.tileLayer(
-        "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
-        {
-          maxZoom: 19,
-          subdomains: "abcd",
-          attribution:
-            '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
-        },
-      ).addTo(map);
+
+      // Tile layer selection: Google Maps if a browser-restricted JS API
+      // key is configured (set NEXT_PUBLIC_GOOGLE_MAPS_KEY + enable Maps
+      // JavaScript API on the key), otherwise CartoDB Dark Matter as
+      // the free no-key fallback that matches the almanac palette.
+      const gmapsKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY;
+      if (gmapsKey) {
+        await ensureGoogleMapsScript(gmapsKey);
+        if (cancelled) return;
+        // GoogleMutant lazy-imported so its side-effect L.gridLayer
+        // augmentation only happens when we actually use it.
+        // @ts-ignore — plugin ships without TS types
+        await import("leaflet.gridlayer.googlemutant");
+        (L as any).gridLayer
+          .googleMutant({ type: "roadmap", maxZoom: 21 })
+          .addTo(map);
+      } else {
+        L.tileLayer(
+          "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
+          {
+            maxZoom: 19,
+            subdomains: "abcd",
+            attribution:
+              '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
+          },
+        ).addTo(map);
+      }
       mapRef.current = map;
       redraw();
     })();
@@ -199,4 +215,30 @@ export default function Map({
   }
 
   return <div ref={containerRef} className={className ?? "map"} />;
+}
+
+// Load Google Maps JS API once per page. Subsequent callers reuse the
+// in-flight promise so we never inject the script twice.
+let gmapsLoadPromise: Promise<void> | null = null;
+function ensureGoogleMapsScript(apiKey: string): Promise<void> {
+  if (typeof window === "undefined") return Promise.resolve();
+  if ((window as any).google?.maps) return Promise.resolve();
+  if (gmapsLoadPromise) return gmapsLoadPromise;
+  gmapsLoadPromise = new Promise((resolve, reject) => {
+    const existing = document.getElementById("gmaps-script") as HTMLScriptElement | null;
+    if (existing) {
+      existing.addEventListener("load", () => resolve());
+      existing.addEventListener("error", () => reject(new Error("gmaps script failed")));
+      return;
+    }
+    const script = document.createElement("script");
+    script.id = "gmaps-script";
+    script.async = true;
+    script.defer = true;
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&v=weekly&libraries=&loading=async`;
+    script.addEventListener("load", () => resolve());
+    script.addEventListener("error", () => reject(new Error("gmaps script failed")));
+    document.head.appendChild(script);
+  });
+  return gmapsLoadPromise;
 }
