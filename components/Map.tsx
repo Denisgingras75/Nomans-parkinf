@@ -240,7 +240,14 @@ export default function Map({
           : name;
       const marker = L.marker([s.position.lat, s.position.lng], { icon: shuttleIcon })
         .addTo(map)
-        .bindTooltip(speedLabel, { direction: "top", offset: [0, -12] });
+        // Permanent so each van's name floats beside it — lets you tell two
+        // combis apart at a glance without tapping.
+        .bindTooltip(speedLabel, {
+          permanent: true,
+          direction: "top",
+          offset: [0, -14],
+          className: "van-label",
+        });
       layersRef.current.push(marker);
     }
 

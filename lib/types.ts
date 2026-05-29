@@ -15,6 +15,9 @@ export type Settings = {
   online: boolean;
   alertsEnabled: boolean;
   hours: ServiceHours;
+  // Friendly names for the map dots, keyed by shuttle id (Bouncie VIN/IMEI,
+  // or "phone:<driverId>"). e.g. { "1G1234...": "Van 1" }. Owner-editable.
+  vehicleLabels: Record<string, string>;
 };
 
 export type Driver = {

@@ -632,6 +632,14 @@ export default function AdminPage() {
         onSave={(capacity) => saveSettings({ capacity })}
       />
 
+      {/* Vehicle labels */}
+      <VehiclesEditor
+        shuttles={shuttles}
+        labels={settings.vehicleLabels ?? {}}
+        saving={savingSettings}
+        onSave={(vehicleLabels) => saveSettings({ vehicleLabels })}
+      />
+
       {/* Today */}
       <div className="card">
         <h2 style={{ margin: "0 0 8px" }}>Today's rides</h2>
@@ -858,6 +866,74 @@ function CapacityEditor({
           Save capacity
         </button>
       </div>
+    </div>
+  );
+}
+
+// Name each tracked vehicle so the map dots read "Van 1 / Van 2" instead of a
+// generic "Combi". Vehicles appear here once their Bouncie (or a driver's
+// phone) reports GPS; the owner labels each tracker id.
+function VehiclesEditor({
+  shuttles,
+  labels,
+  saving,
+  onSave,
+}: {
+  shuttles: { id: string; speedMph: number | null; updatedAt: number | null }[];
+  labels: Record<string, string>;
+  saving: boolean;
+  onSave: (labels: Record<string, string>) => void;
+}) {
+  const [draft, setDraft] = useState<Record<string, string>>(labels);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => setDraft(labels), [JSON.stringify(labels)]);
+
+  // Union of vehicles seen live + any already-named id, so a parked van you've
+  // labelled still shows up for editing even when it isn't reporting.
+  const ids = Array.from(new Set([...shuttles.map((s) => s.id), ...Object.keys(labels)]));
+
+  return (
+    <div className="card">
+      <h2 style={{ margin: "0 0 4px" }}>Vehicles</h2>
+      <div className="note" style={{ marginBottom: 12 }}>
+        Name each van so the map shows “Van 1 / Van 2” instead of “Combi”. Drive a van and its
+        tracker id appears below — just label the one that’s moving.
+      </div>
+      {ids.length === 0 && (
+        <div className="note">
+          No vehicles have reported yet. They’ll appear once a van’s Bouncie pushes GPS (or a
+          driver broadcasts phone GPS).
+        </div>
+      )}
+      {ids.map((id) => {
+        const live = shuttles.find((s) => s.id === id);
+        const ago = live?.updatedAt != null ? Math.round((Date.now() - live.updatedAt) / 1000) : null;
+        const seen =
+          ago == null
+            ? "not reporting"
+            : ago < 60
+            ? `${ago}s ago`
+            : `${Math.round(ago / 60)}m ago`;
+        const speed = typeof live?.speedMph === "number" ? ` · ${Math.round(live.speedMph)} mph` : "";
+        return (
+          <div key={id} style={{ marginBottom: 10 }}>
+            <input
+              value={draft[id] ?? ""}
+              placeholder="e.g. Van 1"
+              onChange={(e) => setDraft({ ...draft, [id]: e.target.value })}
+            />
+            <div className="note" style={{ fontSize: 11, wordBreak: "break-all", marginTop: 2 }}>
+              <code>{id}</code> · {seen}
+              {speed}
+            </div>
+          </div>
+        );
+      })}
+      {ids.length > 0 && (
+        <button onClick={() => onSave(draft)} disabled={saving} style={{ width: "auto", marginTop: 4 }}>
+          Save names
+        </button>
+      )}
     </div>
   );
 }

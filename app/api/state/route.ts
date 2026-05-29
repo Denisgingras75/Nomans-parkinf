@@ -103,7 +103,9 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({
     shuttles: liveShuttles.map((s) => ({
       id: s.id,
-      label: s.label ?? null,
+      // Owner-assigned name (e.g. "Van 1") wins; else the upsert-time label
+      // (driver name for phone broadcasts); else generic "Combi" in the UI.
+      label: settings.vehicleLabels?.[s.id] ?? s.label ?? null,
       position: s.position,
       heading: s.heading,
       speedMph: s.speedMph,

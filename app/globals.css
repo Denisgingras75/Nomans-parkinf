@@ -269,6 +269,21 @@ button.ok:hover:not(:disabled) { background: #c89a44; }
   flex-direction: column;
 }
 .stop.claimed-other { opacity: 0.6; border-style: dashed; }
+
+/* Permanent van name labels on the map — dark-themed to match the basemap. */
+.leaflet-tooltip.van-label {
+  background: var(--panel, #16202e);
+  color: var(--text-bright, #f4efe6);
+  border: 1px solid var(--border, rgba(160, 134, 84, 0.32));
+  border-radius: 6px;
+  font-family: var(--font-mono, "JetBrains Mono", monospace);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 7px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45);
+  white-space: nowrap;
+}
+.leaflet-tooltip.van-label::before { display: none; } /* drop the pointer arrow */
 .stop-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .stop-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .stop-actions button { padding: 8px 10px; font-size: 12px; width: auto; }
