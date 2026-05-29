@@ -22,8 +22,9 @@ const KV_SETTINGS_KEY = "nomans:settings:v1";
 const KV_DRIVERS_KEY = "nomans:drivers:v1";
 const KV_RIDES_PREFIX = "nomans:rides:"; // suffix: YYYY-MM-DD (Eastern)
 
-// Evaluate at call time, not module load — guards against env vars being
-// injected after the bundle is initialized in some serverless runtimes.
+// Always attempt KV first. The @vercel/kv client throws if env vars
+// aren't injected; we catch in the helpers below and fall back to
+// in-memory so `npm run dev` without KV still works.
 function useKV(): boolean {
   return Boolean(process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN);
 }
@@ -69,7 +70,27 @@ async function kvSet<T>(key: string, value: T): Promise<void> {
 // ---------- State (shuttle position + active queue) ----------
 
 async function readState(): Promise<AppState> {
-  if (useKV()) return (await kvGet<AppState>(KV_STATE_KEY)) ?? initState();
+  const u = useKV();
+  // TEMP DEBUG
+  try {
+    await kv.set("nomans:debug:read-state-trace", {
+      useKV: u,
+      url: process.env.KV_REST_API_URL?.slice(0, 35),
+      tokenLen: process.env.KV_REST_API_TOKEN?.length ?? 0,
+      ts: Date.now(),
+    });
+  } catch {}
+  if (u) {
+    const got = await kvGet<AppState>(KV_STATE_KEY);
+    try {
+      await kv.set("nomans:debug:read-state-got", {
+        gotShuttle: got?.shuttle,
+        gotIsNull: got === null,
+        ts: Date.now(),
+      });
+    } catch {}
+    return got ?? initState();
+  }
   if (!memory.__nomansState) memory.__nomansState = initState();
   return memory.__nomansState;
 }

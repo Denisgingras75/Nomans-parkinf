@@ -12,11 +12,15 @@ export async function GET(req: NextRequest) {
   const state = await kv.get("nomans:state:v1");
   const stateRouteSaw = await kv.get("nomans:debug:state-route-saw");
   const stateRouteErr = await kv.get("nomans:debug:state-route-error");
+  const readStateTrace = await kv.get("nomans:debug:read-state-trace");
+  const readStateGot = await kv.get("nomans:debug:read-state-got");
 
   return NextResponse.json({
     kv_url: process.env.KV_REST_API_URL?.slice(0, 40),
     state_value: state,
     state_route_saw: stateRouteSaw,
     state_route_error: stateRouteErr,
+    read_state_trace: readStateTrace,
+    read_state_got: readStateGot,
   });
 }
