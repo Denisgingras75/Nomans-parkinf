@@ -134,12 +134,13 @@ Settings getter merges stored partials over defaults, so adding new Settings fie
 
 - Polygon geofence editor in `/admin` (bbox already works; only worth doing if you need surgical exclusions like the bridge to East Chop).
 - Per-van seat capacity — currently a fleet-wide pool (`remainingCapacity()` TODO). Only worth it if overbooking one van becomes real.
-- Driver↔vehicle mapping (`Driver.vehicleId`) so a claimed ride's ETA uses that driver's Bouncie van (not just nearest / their phone broadcast), and the map can label dots "Van 1 / Van 2". Phase 3 of the two-shuttle work.
+- Driver↔vehicle mapping (`Driver.vehicleId`) so a *claimed ride's ETA* uses that driver's Bouncie van (not just nearest). Van **labels** are already done (`Settings.vehicleLabels`, owner-editable in `/admin` → Vehicles); this remaining piece is only the ETA refinement for Bouncie-claimed rides (phone-broadcast claims already use the assigned van).
 - Real routing (Mapbox Directions / OpenRouteService) instead of haversine + 18 mph ETA — needs API key from owner.
 - Driver "I'm stuck" affordance (still en-route, just delayed — distinct from off-shift, which already exists).
 
 ### Done
 
+- Per-vehicle map labels — `Settings.vehicleLabels` (id→name) edited in `/admin` → Vehicles; map dots show "Van 1 / Van 2" (permanent tooltip) instead of "Combi".
 - Multi-shuttle positions + ride claiming — `state.shuttles[]` keyed by vehicle id (decision #7); driver Accept/Decline claims a whole ride, other vans see it locked, passenger sees "X is on the way". Seat pool still fleet-wide.
 - Passenger self-cancel — `DELETE /api/ping?stopId=` clears both legs (`rideId`-linked); 409 once picked up.
 - Service hours schedule — `Settings.hours` with America/New_York evaluation, kill-switch semantics; disabled by default.

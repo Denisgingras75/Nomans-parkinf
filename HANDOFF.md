@@ -28,6 +28,16 @@ Everything below is deployed and live:
 - [ ] Set a $20/month billing cap on Google Cloud for the Maps key.
 - [ ] (Optional) Rename the Vercel project `nomans-parkinf → nomans-parking` to drop the typo in any non-aliased URLs.
 
+## Two-shuttle work — SHIPPED
+
+Both combis run on one Bouncie account. Three phases landed (see `CLAUDE.md`
+decision #7 + "Done"):
+- **Phase 1** — `state.shuttles[]` keyed by vehicle id; webhook + phone-broadcast `upsertShuttle` by id (no more teleporting dot). Map shows one arrow + trail per van.
+- **Phase 2** — ride claiming: driver **Accept/Decline** on `/driver`, other van sees it locked, passenger sees "X is on the way". `Stop.assignedDriverId` + `accepted` status + `dismissedBy[]`.
+- **Phase 3** — per-van labels: `Settings.vehicleLabels` edited in `/admin → Vehicles`; map dots read "Van 1 / Van 2".
+
+Deferred: per-van seat capacity (fleet pool + TODO); driver↔vehicle ETA for Bouncie-claimed rides (phone-broadcast claims already use the assigned van).
+
 ## Where to pick up next session
 
 In rough order of leverage:

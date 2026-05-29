@@ -51,6 +51,17 @@ export async function POST(req: NextRequest) {
     patch.capacity = Math.round(c);
   }
 
+  if (body.vehicleLabels && typeof body.vehicleLabels === "object" && !Array.isArray(body.vehicleLabels)) {
+    // Sanitize the id→label map: trim labels, drop empties, cap length/count.
+    const clean: Record<string, string> = {};
+    for (const [id, raw] of Object.entries(body.vehicleLabels as Record<string, unknown>)) {
+      if (Object.keys(clean).length >= 20) break;
+      const label = String(raw ?? "").trim().slice(0, 24);
+      if (id && label) clean[String(id).slice(0, 128)] = label;
+    }
+    patch.vehicleLabels = clean;
+  }
+
   if (body.online !== undefined) patch.online = Boolean(body.online);
   if (body.alertsEnabled !== undefined) patch.alertsEnabled = Boolean(body.alertsEnabled);
 

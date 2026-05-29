@@ -56,6 +56,7 @@ const DEFAULT_SETTINGS: Settings = {
   online: true,
   alertsEnabled: true,
   hours: DEFAULT_HOURS,
+  vehicleLabels: {},
 };
 
 function initState(): AppState {
