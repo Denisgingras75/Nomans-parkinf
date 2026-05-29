@@ -18,15 +18,19 @@ type Stop = {
   phone?: string | null;
 };
 
+type ShuttleFeed = {
+  id: string;
+  label: string | null;
+  position: LatLng | null;
+  heading: number | null;
+  speedMph: number | null;
+  updatedAt: number | null;
+};
+
 type StateResponse = {
-  shuttle: {
-    position: LatLng | null;
-    heading: number | null;
-    speedMph: number | null;
-    updatedAt: number | null;
-    onboard: number;
-    capacity: number;
-  };
+  shuttles: ShuttleFeed[];
+  onboard: number;
+  capacity: number;
   stops: Stop[];
   nomans: LatLng;
   me: { id: string; name: string; onShift: boolean; phone: string | null } | null;
@@ -340,12 +344,15 @@ export default function DriverPage() {
 
   const stops = state?.stops ?? [];
   const queued = stops.filter((s) => s.status === "queued" || s.status === "enroute");
-  const shuttle = state?.shuttle.position ?? null;
-  const shuttleHeading = state?.shuttle.heading ?? null;
-  const shuttleSpeedMph = state?.shuttle.speedMph ?? null;
+  const shuttles = (state?.shuttles ?? []).filter(
+    (s): s is ShuttleFeed & { position: LatLng } => s.position != null,
+  );
   const nomans = state?.nomans ?? { lat: 41.4541, lng: -70.5605 };
-  const updatedAgo =
-    state?.shuttle.updatedAt != null ? Math.round((Date.now() - state.shuttle.updatedAt) / 1000) : null;
+  const newestUpdate = shuttles.reduce<number | null>(
+    (max, s) => (s.updatedAt != null && (max == null || s.updatedAt > max) ? s.updatedAt : max),
+    null,
+  );
+  const updatedAgo = newestUpdate != null ? Math.round((Date.now() - newestUpdate) / 1000) : null;
 
   return (
     <main className="driver-page">
@@ -367,7 +374,7 @@ export default function DriverPage() {
         <div className="kpi">
           <div>
             <div className="num">
-              {state?.shuttle.onboard ?? 0}/{state?.shuttle.capacity ?? 8}
+              {state?.onboard ?? 0}/{state?.capacity ?? 8}
             </div>
             <div className="lbl">On board</div>
           </div>
@@ -519,7 +526,7 @@ export default function DriverPage() {
 
         <div>
           <h2>Map</h2>
-          <Map shuttle={shuttle} shuttleHeading={shuttleHeading} shuttleSpeedMph={shuttleSpeedMph} nomans={nomans} stops={queued} className="map map-driver" />
+          <Map shuttles={shuttles} nomans={nomans} stops={queued} className="map map-driver" />
         </div>
       </div>
     </main>

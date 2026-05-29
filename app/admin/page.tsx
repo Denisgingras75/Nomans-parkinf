@@ -13,7 +13,9 @@ type AdminState = {
   today: Stop[];
   legacyDriverEnabled: boolean;
   smsConfigured: boolean;
-  shuttle: { onboard: number; capacity: number; position: LatLng | null; updatedAt: number | null };
+  shuttles: { id: string; label?: string; position: LatLng | null; heading: number | null; speedMph: number | null; updatedAt: number | null }[];
+  onboard: number;
+  capacity: number;
   onlineReason: OnlineReason;
   isBootstrap: boolean;
   managers?: Manager[];
@@ -294,9 +296,13 @@ export default function AdminPage() {
     );
   }
 
-  const { settings, drivers, today, legacyDriverEnabled, smsConfigured, shuttle, onlineReason } = data;
-  const updatedAgo =
-    shuttle.updatedAt != null ? Math.round((Date.now() - shuttle.updatedAt) / 1000) : null;
+  const { settings, drivers, today, legacyDriverEnabled, smsConfigured, shuttles, onboard, capacity, onlineReason } = data;
+  // Freshest fix across all vans, for the "updated Ns ago" readout.
+  const newestUpdate = shuttles.reduce<number | null>(
+    (max, s) => (s.updatedAt != null && (max == null || s.updatedAt > max) ? s.updatedAt : max),
+    null,
+  );
+  const updatedAgo = newestUpdate != null ? Math.round((Date.now() - newestUpdate) / 1000) : null;
   const effectivelyOnline = onlineReason === "open";
 
   return (
@@ -346,7 +352,7 @@ export default function AdminPage() {
         <hr style={{ border: "none", borderTop: "1px solid var(--border)", margin: "14px 0" }} />
         <div className="kpi">
           <div>
-            <div className="num">{shuttle.onboard}/{shuttle.capacity}</div>
+            <div className="num">{onboard}/{capacity}</div>
             <div className="lbl">On board now</div>
           </div>
           <div>

@@ -11,10 +11,16 @@ type MapStop = {
   name?: string;
 };
 
+type MapShuttle = {
+  id: string;
+  position: LatLng;
+  heading?: number | null;
+  speedMph?: number | null;
+  label?: string | null;
+};
+
 type Props = {
-  shuttle: LatLng | null;
-  shuttleHeading?: number | null;
-  shuttleSpeedMph?: number | null;
+  shuttles?: MapShuttle[];
   nomans: LatLng;
   me?: LatLng | null;
   stops?: MapStop[];
@@ -34,9 +40,7 @@ const C = {
 const TRAIL_MAX = 24; // ~2 min of breadcrumbs if Bouncie pings every 5s
 
 export default function Map({
-  shuttle,
-  shuttleHeading,
-  shuttleSpeedMph,
+  shuttles = [],
   nomans,
   me,
   stops = [],
@@ -47,7 +51,8 @@ export default function Map({
   const leafletRef = useRef<any>(null);
   const layersRef = useRef<any[]>([]);
   const iconsRef = useRef<Record<string, any>>({});
-  const trailRef = useRef<LatLng[]>([]);
+  // Breadcrumb trails keyed by shuttle id so two vans keep separate trails.
+  const trailsRef = useRef<Record<string, LatLng[]>>({});
 
   // One-time map initialization. Leaflet touches `window` so dynamic-import in effect.
   useEffect(() => {
@@ -72,7 +77,7 @@ export default function Map({
         dropoff: dot(C.rust),
       };
 
-      const center = shuttle ?? me ?? nomans;
+      const center = shuttles[0]?.position ?? me ?? nomans;
       const map = L.map(containerRef.current).setView([center.lat, center.lng], 14);
 
       // Tile layer selection: Google Maps if a browser-restricted JS API
@@ -114,24 +119,39 @@ export default function Map({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Track shuttle position history for the breadcrumb trail. Only append
+  // Track each van's position history for its breadcrumb trail. Only append
   // if the new fix is meaningfully different from the last (skips jitter).
+  // Keyed by shuttle id so two vans don't share a trail.
+  const shuttleSig = JSON.stringify(
+    shuttles.map((s) => [s.id, s.position.lat, s.position.lng, s.heading]),
+  );
   useEffect(() => {
-    if (!shuttle) return;
-    const last = trailRef.current[trailRef.current.length - 1];
-    if (!last || Math.abs(last.lat - shuttle.lat) > 0.00005 || Math.abs(last.lng - shuttle.lng) > 0.00005) {
-      trailRef.current = [...trailRef.current, shuttle].slice(-TRAIL_MAX);
+    const seen = new Set<string>();
+    for (const s of shuttles) {
+      seen.add(s.id);
+      const trail = trailsRef.current[s.id] ?? [];
+      const last = trail[trail.length - 1];
+      if (
+        !last ||
+        Math.abs(last.lat - s.position.lat) > 0.00005 ||
+        Math.abs(last.lng - s.position.lng) > 0.00005
+      ) {
+        trailsRef.current[s.id] = [...trail, s.position].slice(-TRAIL_MAX);
+      }
     }
-  }, [shuttle?.lat, shuttle?.lng]);
+    // Drop trails for vans no longer in the feed (went stale/off).
+    for (const id of Object.keys(trailsRef.current)) {
+      if (!seen.has(id)) delete trailsRef.current[id];
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shuttleSig]);
 
   // Redraw on any prop change.
   useEffect(() => {
     redraw();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
-    shuttle?.lat,
-    shuttle?.lng,
-    shuttleHeading,
+    shuttleSig,
     me?.lat,
     me?.lng,
     nomans.lat,
@@ -171,39 +191,42 @@ export default function Map({
       layersRef.current.push(marker);
     };
 
-    // Breadcrumb polyline — fade older segments using opacity.
-    const trail = trailRef.current;
-    if (trail.length >= 2) {
-      for (let i = 1; i < trail.length; i++) {
-        const opacity = 0.18 + 0.62 * (i / trail.length);
-        const seg = L.polyline(
-          [
-            [trail[i - 1].lat, trail[i - 1].lng],
-            [trail[i].lat, trail[i].lng],
-          ],
-          { color: C.rust, weight: 4, opacity, lineCap: "round" },
-        ).addTo(map);
-        layersRef.current.push(seg);
-      }
-    }
-
     add(nomans, iconsRef.current.nomans, "NoMans Restaurant");
-    if (shuttle) {
+
+    // One breadcrumb trail + one heading arrow per live van.
+    for (const s of shuttles) {
+      const trail = trailsRef.current[s.id] ?? [];
+      if (trail.length >= 2) {
+        for (let i = 1; i < trail.length; i++) {
+          const opacity = 0.18 + 0.62 * (i / trail.length);
+          const seg = L.polyline(
+            [
+              [trail[i - 1].lat, trail[i - 1].lng],
+              [trail[i].lat, trail[i].lng],
+            ],
+            { color: C.rust, weight: 4, opacity, lineCap: "round" },
+          ).addTo(map);
+          layersRef.current.push(seg);
+        }
+      }
+
       const shuttleIcon = L.divIcon({
         className: "nomans-shuttle-marker",
-        html: shuttleMarkerHtml(shuttleHeading),
+        html: shuttleMarkerHtml(s.heading),
         iconSize: [32, 32],
         iconAnchor: [16, 16],
       });
+      const name = s.label ?? "Combi";
       const speedLabel =
-        typeof shuttleSpeedMph === "number" && Number.isFinite(shuttleSpeedMph)
-          ? `Combi · ${Math.round(shuttleSpeedMph)} mph`
-          : "Combi shuttle";
-      const marker = L.marker([shuttle.lat, shuttle.lng], { icon: shuttleIcon })
+        typeof s.speedMph === "number" && Number.isFinite(s.speedMph)
+          ? `${name} · ${Math.round(s.speedMph)} mph`
+          : name;
+      const marker = L.marker([s.position.lat, s.position.lng], { icon: shuttleIcon })
         .addTo(map)
         .bindTooltip(speedLabel, { direction: "top", offset: [0, -12] });
       layersRef.current.push(marker);
     }
+
     if (me) add(me, iconsRef.current.me, "You");
     for (const s of stops) {
       add(

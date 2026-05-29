@@ -108,7 +108,7 @@ Without KV the app still runs — state lives in process memory and dies on serv
 
 `lib/store.ts` is the single source of truth. Three keyed namespaces in KV:
 
-- `nomans:state:v1` — `{ shuttle, stops[] }` (live position + active queue)
+- `nomans:state:v1` — `{ shuttles[], capacity, onboard, stops[] }` (live per-van positions + fleet seat pool + active queue)
 - `nomans:settings:v1` — `{ nomans, bounds, capacity, online, alertsEnabled }`
 - `nomans:drivers:v1` — `Driver[]`
 
@@ -126,7 +126,7 @@ Settings getter merges stored partials over defaults, so adding new Settings fie
 4. **Everything operational lives in KV settings**, not env vars. NoMans coordinate, geofence, capacity, online state, alerts-enabled. Env vars are for secrets and integration credentials only.
 5. **Store API is async.** Don't try to make it sync again. Every consumer awaits.
 6. **Brand:** logo lives at `public/nomans-logo.png` and `app/icon.png`. White card header containing the wordmark + a small tag below. Don't replace with text branding without asking the owner.
-7. **One shuttle assumption.** The store treats `state.shuttle` as singular. Multi-shuttle support would require keying state by shuttle ID — that's a real refactor, not a quick fix.
+7. **Multi-shuttle, keyed by vehicle id.** `state.shuttles[]` holds one positional `ShuttleState` per van, keyed by `id` (Bouncie VIN/IMEI, or `phone:<driverId>` for phone broadcast). The Bouncie webhook and `/api/driver/location` **upsert** by id (`upsertShuttle`) so two vans on one Bouncie account don't clobber each other. Seat capacity/onboard is still a **fleet-wide pool** on `AppState` (not per-van) — `remainingCapacity()` has a TODO for that. `readState()` migrates the old singular `{ shuttle }` shape on read.
 
 ---
 

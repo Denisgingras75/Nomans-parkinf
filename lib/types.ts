@@ -35,12 +35,15 @@ export type Manager = {
 };
 
 export type ShuttleState = {
+  // Stable per-vehicle id: a Bouncie VIN/IMEI, or "phone:<driverId>" for a
+  // driver broadcasting from their phone. Keys the shuttle in AppState.shuttles
+  // so two vans on one Bouncie account don't clobber each other.
+  id: string;
+  label?: string;
   position: LatLng | null;
   heading: number | null;
   speedMph: number | null;
   updatedAt: number | null;
-  capacity: number;
-  onboard: number;
 };
 
 export type StopStatus = "queued" | "enroute" | "picked-up" | "dropped-off" | "cancelled";
@@ -62,6 +65,12 @@ export type Stop = {
 };
 
 export type AppState = {
-  shuttle: ShuttleState;
+  // One entry per live vehicle. Was a single `shuttle` before two vans
+  // shared the Bouncie account; see CLAUDE.md decision #7.
+  shuttles: ShuttleState[];
+  // Fleet-wide seat pool. Kept global (not per-van) for now — see the
+  // per-van capacity TODO in store.ts.
+  capacity: number;
+  onboard: number;
   stops: Stop[];
 };

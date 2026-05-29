@@ -7,15 +7,19 @@ import PlacesAutocomplete from "@/components/PlacesAutocomplete";
 
 const Map = dynamic(() => import("@/components/Map"), { ssr: false });
 
+type ShuttleFeed = {
+  id: string;
+  label: string | null;
+  position: LatLng | null;
+  heading: number | null;
+  speedMph: number | null;
+  updatedAt: number | null;
+};
+
 type StateResponse = {
-  shuttle: {
-    position: LatLng | null;
-    heading: number | null;
-    speedMph: number | null;
-    updatedAt: number | null;
-    onboard: number;
-    capacity: number;
-  };
+  shuttles: ShuttleFeed[];
+  onboard: number;
+  capacity: number;
   stops: { id: string; kind: "pickup" | "dropoff"; position: LatLng; status: string }[];
   nomans: LatLng;
   online: boolean;
@@ -156,12 +160,17 @@ export default function PassengerPage() {
   };
 
   const yours = state?.yours;
-  const shuttle = state?.shuttle.position ?? null;
-  const shuttleHeading = state?.shuttle.heading ?? null;
-  const shuttleSpeedMph = state?.shuttle.speedMph ?? null;
+  const shuttles = (state?.shuttles ?? []).filter(
+    (s): s is ShuttleFeed & { position: LatLng } => s.position != null,
+  );
   const nomans = state?.nomans ?? { lat: 41.4541, lng: -70.5605 };
-  const lastUpdateSec = state?.shuttle.updatedAt
-    ? Math.max(0, Math.round((Date.now() - state.shuttle.updatedAt) / 1000))
+  // Freshest fix across all live vans, for the "updated Ns ago" line.
+  const newestUpdate = shuttles.reduce<number | null>(
+    (max, s) => (s.updatedAt != null && (max == null || s.updatedAt > max) ? s.updatedAt : max),
+    null,
+  );
+  const lastUpdateSec = newestUpdate
+    ? Math.max(0, Math.round((Date.now() - newestUpdate) / 1000))
     : null;
 
   return (
@@ -322,9 +331,7 @@ export default function PassengerPage() {
 
       <div className="card" style={{ padding: 8 }}>
         <Map
-          shuttle={shuttle}
-          shuttleHeading={shuttleHeading}
-          shuttleSpeedMph={shuttleSpeedMph}
+          shuttles={shuttles}
           nomans={nomans}
           me={me}
           stops={state?.stops ?? []}
@@ -338,7 +345,7 @@ export default function PassengerPage() {
           ? `Shuttle updated ${lastUpdateSec}s ago`
           : `Shuttle signal stale (${Math.round(lastUpdateSec / 60)} min)`}
         {" · "}
-        {state ? `${state.shuttle.onboard}/${state.shuttle.capacity} on board` : ""}
+        {state ? `${state.onboard}/${state.capacity} on board` : ""}
       </p>
     </main>
   );

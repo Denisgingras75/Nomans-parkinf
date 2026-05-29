@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { updateShuttle } from "@/lib/store";
+import { upsertShuttle } from "@/lib/store";
 import { findDriver } from "@/lib/auth";
 
 export const runtime = "nodejs";
@@ -35,7 +35,11 @@ export async function POST(req: NextRequest) {
   // parity with Bouncie payloads.
   const speedMph = Number.isFinite(speedRaw) ? speedRaw * 2.23694 : null;
 
-  await updateShuttle({
+  // Key by driver so a phone-broadcasting driver gets their own marker
+  // (labelled with their name) rather than fighting a Bouncie van for the
+  // single position slot.
+  await upsertShuttle(`phone:${driver.id}`, {
+    label: driver.name,
     position: { lat, lng },
     heading,
     speedMph,
