@@ -22,6 +22,7 @@ const KV_DRIVERS_KEY = "nomans:drivers:v1";
 const KV_MANAGERS_KEY = "nomans:managers:v1";
 const KV_PUSH_SUBS_KEY = "nomans:push-subs:v1";
 const KV_RIDES_PREFIX = "nomans:rides:"; // suffix: YYYY-MM-DD (Eastern)
+const KV_BOUNCIE_DEBUG_KEY = "nomans:bouncie-debug:v1"; // TEMP — remove after parser confirmed
 
 // Always attempt KV first. The @vercel/kv client throws if env vars
 // aren't injected; we catch in the helpers below and fall back to
@@ -37,6 +38,7 @@ const memory = globalThis as unknown as {
   __nomansManagers?: Manager[];
   __nomansRides?: Record<string, Stop[]>;
   __nomansPushSubs?: StoredPushSub[];
+  __nomansBouncieDebug?: BouncieDebugEntry[];
 };
 
 export type StoredPushSub = {
@@ -442,6 +444,39 @@ async function appendToRideArchive(stop: Stop): Promise<void> {
     const current = memory.__nomansRides[day] ?? [];
     memory.__nomansRides[day] = [...current.filter((s) => s.id !== stop.id), stop];
   }
+}
+
+// ---------- Bouncie webhook debug (TEMPORARY) ----------
+// Captures the last few raw webhook payloads so we can see Bouncie's actual
+// JSON shape and confirm the parser. Remove this whole section + its callers
+// once live GPS is confirmed working.
+
+export type BouncieDebugEntry = {
+  receivedAt: number;
+  secretOk: boolean;
+  hadBody: boolean;
+  vehicleId: string | null;
+  parsed: { lat: number | null; lng: number | null; heading: number | null; speedMph: number | null };
+  raw: string;
+};
+
+export async function pushBouncieDebug(entry: BouncieDebugEntry): Promise<void> {
+  if (useKV()) {
+    const cur = (await kvGet<BouncieDebugEntry[]>(KV_BOUNCIE_DEBUG_KEY)) ?? [];
+    await kvSet(KV_BOUNCIE_DEBUG_KEY, [entry, ...cur].slice(0, 8));
+  } else {
+    memory.__nomansBouncieDebug = [entry, ...(memory.__nomansBouncieDebug ?? [])].slice(0, 8);
+  }
+}
+
+export async function getBouncieDebug(): Promise<BouncieDebugEntry[]> {
+  if (useKV()) return (await kvGet<BouncieDebugEntry[]>(KV_BOUNCIE_DEBUG_KEY)) ?? [];
+  return memory.__nomansBouncieDebug ?? [];
+}
+
+export async function clearBouncieDebug(): Promise<void> {
+  if (useKV()) await kvSet(KV_BOUNCIE_DEBUG_KEY, []);
+  else memory.__nomansBouncieDebug = [];
 }
 
 // ---------- Managers (staff admin) ----------

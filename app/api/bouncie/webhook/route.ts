@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { upsertShuttle } from "@/lib/store";
+import { upsertShuttle, pushBouncieDebug } from "@/lib/store";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -12,36 +12,56 @@ export const dynamic = "force-dynamic";
 // params on the configured URL) or as an `X-Bouncie-Secret` header.
 export async function POST(req: NextRequest) {
   const expected = process.env.BOUNCIE_WEBHOOK_SECRET;
-  if (!expected) {
-    return NextResponse.json({ error: "webhook secret not configured" }, { status: 500 });
-  }
-
   const url = new URL(req.url);
   const provided = url.searchParams.get("secret") ?? req.headers.get("x-bouncie-secret");
-  if (provided !== expected) {
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  }
+  const secretOk = Boolean(expected) && provided === expected;
 
-  const body = await req.json().catch(() => null);
-  if (!body || typeof body !== "object") {
-    return NextResponse.json({ error: "invalid payload" }, { status: 400 });
+  // Read the raw text first so we can capture it for debugging even when the
+  // body isn't valid JSON.
+  const rawText = await req.text();
+  let body: any = null;
+  try {
+    body = rawText ? JSON.parse(rawText) : null;
+  } catch {
+    body = null;
   }
 
   // Bouncie's payload shape varies by event type. The fields we care about
   // (location/heading/speed) live under different keys depending on
   // whether this is `connect`, `disconnect`, `tripData`, or `mil` etc.
   // Be liberal in what we accept.
+  const vehicleId = body?.vin ?? body?.imei ?? body?.vehicleId ?? null;
+  const loc = body?.location ?? body?.data?.location ?? body ?? {};
+  const lat = numeric(loc?.lat ?? loc?.latitude);
+  const lng = numeric(loc?.lon ?? loc?.lng ?? loc?.longitude);
+  const heading = numeric(loc?.heading ?? body?.heading);
+  const speedMph = numeric(loc?.speed ?? body?.speed);
+
+  // --- TEMP DEBUG: capture every hit (incl. wrong-secret) so we can see what
+  // Bouncie actually sends. Remove with the rest of the debug plumbing. ---
+  await pushBouncieDebug({
+    receivedAt: Date.now(),
+    secretOk,
+    hadBody: body != null,
+    vehicleId: vehicleId != null ? String(vehicleId) : null,
+    parsed: { lat, lng, heading, speedMph },
+    raw: rawText.slice(0, 4000),
+  });
+
+  if (!expected) {
+    return NextResponse.json({ error: "webhook secret not configured" }, { status: 500 });
+  }
+  if (!secretOk) {
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+  if (!body || typeof body !== "object") {
+    return NextResponse.json({ error: "invalid payload" }, { status: 400 });
+  }
+
   const allowedVehicle = process.env.SHUTTLE_VEHICLE_ID;
-  const vehicleId = body.vin ?? body.imei ?? body.vehicleId;
   if (allowedVehicle && vehicleId && String(vehicleId) !== allowedVehicle) {
     return NextResponse.json({ ok: true, ignored: "different vehicle" });
   }
-
-  const loc = body.location ?? body.data?.location ?? body;
-  const lat = numeric(loc?.lat ?? loc?.latitude);
-  const lng = numeric(loc?.lon ?? loc?.lng ?? loc?.longitude);
-  const heading = numeric(loc?.heading ?? body.heading);
-  const speedMph = numeric(loc?.speed ?? body.speed);
 
   if (lat == null || lng == null) {
     return NextResponse.json({ ok: true, ignored: "no coordinates in payload" });
