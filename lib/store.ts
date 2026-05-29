@@ -85,11 +85,8 @@ async function kvSet<T>(key: string, value: T): Promise<void> {
   if (!url || !token) return;
   await fetch(`${url}/set/${encodeURIComponent(key)}`, {
     method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(JSON.stringify(value)),
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify(value),
     cache: "no-store",
   });
 }
