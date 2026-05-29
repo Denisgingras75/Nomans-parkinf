@@ -35,10 +35,20 @@ export async function GET(req: NextRequest) {
   // hide an idle/parked van, since Bouncie may go quiet between rides.
   const liveShuttles = state.shuttles.filter((s) => s.position != null);
 
-  const activeStops = state.stops.filter((s) => s.status === "queued" || s.status === "enroute");
+  const myId = driverRef?.id ?? null;
+  const activeStops = state.stops.filter(
+    (s) => s.status === "queued" || s.status === "accepted" || s.status === "enroute",
+  );
 
-  const publicStops = activeStops.map((s) => ({
+  // Drivers don't see rides they personally dismissed (unless they later
+  // claimed them). Passengers see the full active set.
+  const visibleStops = activeStops.filter(
+    (s) => !(isDriver && s.dismissedBy?.includes(myId!) && s.assignedDriverId !== myId),
+  );
+
+  const publicStops = visibleStops.map((s) => ({
     id: s.id,
+    rideId: isDriver ? s.rideId : undefined,
     kind: s.kind,
     partySize: s.partySize,
     status: s.status,
@@ -46,22 +56,38 @@ export async function GET(req: NextRequest) {
     name: isDriver ? s.name : undefined,
     note: isDriver ? s.note : undefined,
     phone: isDriver ? s.phone ?? null : undefined,
+    assignedDriverId: isDriver ? s.assignedDriverId ?? null : undefined,
+    assignedDriverName: isDriver ? s.assignedDriverName ?? null : undefined,
   }));
 
-  let yours: { etaMinutes: number | null; position: number; status: string } | null = null;
+  let yours:
+    | { etaMinutes: number | null; position: number; status: string; driverName: string | null }
+    | null = null;
   if (stopId) {
     const me = state.stops.find((s) => s.id === stopId);
     if (me) {
       const queuedAhead = activeStops.filter(
         (s) => s.kind === "pickup" && s.createdAt < me.createdAt,
       ).length;
-      // ETA from whichever live van is closest to the pickup.
+      // Prefer the assigned driver's own van (when they're broadcasting their
+      // phone GPS) for ETA; otherwise fall back to the nearest live van.
+      const assignedVan = me.assignedDriverId
+        ? liveShuttles.find((s) => s.id === `phone:${me.assignedDriverId}`)
+        : undefined;
+      const etaSource = assignedVan ? [assignedVan] : liveShuttles;
+      const enRoute =
+        me.status === "queued" || me.status === "accepted" || me.status === "enroute";
       const eta =
-        liveShuttles.length && (me.status === "queued" || me.status === "enroute")
-          ? Math.min(...liveShuttles.map((s) => etaMinutes(s.position!, me.position))) +
+        etaSource.length && enRoute
+          ? Math.min(...etaSource.map((s) => etaMinutes(s.position!, me.position))) +
             queuedAhead * 3
           : null;
-      yours = { etaMinutes: eta, position: queuedAhead + 1, status: me.status };
+      yours = {
+        etaMinutes: eta,
+        position: queuedAhead + 1,
+        status: me.status,
+        driverName: me.assignedDriverName ?? null,
+      };
     }
   }
 

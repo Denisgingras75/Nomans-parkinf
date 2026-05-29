@@ -45,7 +45,7 @@ PR or continued work on this one.
 |-------|--------|---------|------|
 | `/api/ping` | POST · DELETE | POST creates pickup + dropoff stops (linked by `rideId`) + dispatches alerts. DELETE `?stopId=` is passenger self-cancel — clears both legs from the queue (409 if already picked up). | none (stopId is the capability token) |
 | `/api/state` | GET | Public feed: shuttle position, active stops, online state, NoMans pin. `?stopId=` adds ETA. `?driver=<code>` unmasks names. | optional driver |
-| `/api/stops` | POST | Advance a stop's status (queued → enroute → picked-up → dropped-off / cancelled). Adjusts on-board count. | driver |
+| `/api/stops` | POST | Two modes: `{action:"accept"\|"decline", rideId}` claims/releases a whole ride (both legs, by `rideId`); `{id, status}` advances a single stop (queued → accepted → enroute → picked-up → dropped-off / cancelled). 409 if accepting a ride another driver already claimed. | driver |
 | `/api/driver/location` | POST | Driver-phone GPS broadcast | driver |
 | `/api/driver/shift` | POST | Driver flips their own on/off shift | driver (real row only — legacy passcode rejected) |
 | `/api/places/autocomplete` | POST | Google Places (New) Autocomplete proxy (bias = NoMans coord, 8km circle) | none (server-side key) |
@@ -133,12 +133,15 @@ Settings getter merges stored partials over defaults, so adding new Settings fie
 ## Punch list (future work, not blocked on owner)
 
 - Polygon geofence editor in `/admin` (bbox already works; only worth doing if you need surgical exclusions like the bridge to East Chop).
-- Multi-shuttle support (see decision #7).
+- Per-van seat capacity — currently a fleet-wide pool (`remainingCapacity()` TODO). Only worth it if overbooking one van becomes real.
+- Driver↔vehicle mapping (`Driver.vehicleId`) so a claimed ride's ETA uses that driver's Bouncie van (not just nearest / their phone broadcast), and the map can label dots "Van 1 / Van 2". Phase 3 of the two-shuttle work.
 - Real routing (Mapbox Directions / OpenRouteService) instead of haversine + 18 mph ETA — needs API key from owner.
 - Driver "I'm stuck" affordance (still en-route, just delayed — distinct from off-shift, which already exists).
 
 ### Done
 
+- Multi-shuttle positions + ride claiming — `state.shuttles[]` keyed by vehicle id (decision #7); driver Accept/Decline claims a whole ride, other vans see it locked, passenger sees "X is on the way". Seat pool still fleet-wide.
+- Passenger self-cancel — `DELETE /api/ping?stopId=` clears both legs (`rideId`-linked); 409 once picked up.
 - Service hours schedule — `Settings.hours` with America/New_York evaluation, kill-switch semantics; disabled by default.
 - Persistent ride archive — `nomans:rides:YYYY-MM-DD` survives state wipes; `/admin` "Today's rides" merges live + archive.
 - Driver off-shift toggle — `/driver` self-service via `POST /api/driver/shift`.

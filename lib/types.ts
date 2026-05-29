@@ -46,7 +46,7 @@ export type ShuttleState = {
   updatedAt: number | null;
 };
 
-export type StopStatus = "queued" | "enroute" | "picked-up" | "dropped-off" | "cancelled";
+export type StopStatus = "queued" | "accepted" | "enroute" | "picked-up" | "dropped-off" | "cancelled";
 
 export type Stop = {
   id: string;
@@ -60,6 +60,13 @@ export type Stop = {
   note?: string;
   phone?: string | null;
   status: StopStatus;
+  // Set when a driver claims (accepts) the ride — both legs get stamped.
+  // Other drivers see it locked; the passenger sees who's coming.
+  assignedDriverId?: string;
+  assignedDriverName?: string;
+  // Driver ids that dismissed this (still-unclaimed) ride from their own
+  // queue. Server-filtered per driver; the ride stays live for everyone else.
+  dismissedBy?: string[];
   createdAt: number;
   updatedAt: number;
 };

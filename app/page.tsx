@@ -23,7 +23,12 @@ type StateResponse = {
   stops: { id: string; kind: "pickup" | "dropoff"; position: LatLng; status: string }[];
   nomans: LatLng;
   online: boolean;
-  yours: { etaMinutes: number | null; position: number; status: string } | null;
+  yours: {
+    etaMinutes: number | null;
+    position: number;
+    status: string;
+    driverName: string | null;
+  } | null;
 };
 
 type Direction = "to-nomans" | "from-nomans";
@@ -193,13 +198,21 @@ export default function PassengerPage() {
 
       {stopId && yours ? (
         <div className="eta-card">
-          <div className="label">{yours.status === "picked-up" ? "On board" : "Combi inbound"}</div>
+          <div className="label">
+            {yours.status === "picked-up"
+              ? "On board"
+              : yours.driverName
+              ? `${yours.driverName} is on the way`
+              : "Combi inbound"}
+          </div>
           <div className="big">
             {yours.etaMinutes != null ? `${yours.etaMinutes} min` : "—"}
           </div>
           <div style={{ marginTop: 6, fontSize: 13 }}>
             {yours.status === "picked-up"
               ? "Sit tight — heading to your dropoff."
+              : yours.driverName
+              ? "Your driver has your pickup — hang tight."
               : `You're #${yours.position} in the queue.`}
           </div>
         </div>
