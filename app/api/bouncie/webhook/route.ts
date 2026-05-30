@@ -27,15 +27,31 @@ export async function POST(req: NextRequest) {
   }
 
   // Bouncie's payload shape varies by event type. The fields we care about
-  // (location/heading/speed) live under different keys depending on
-  // whether this is `connect`, `disconnect`, `tripData`, or `mil` etc.
-  // Be liberal in what we accept.
+  // (location/heading/speed) live under different keys depending on whether
+  // this is `connect`, `disconnect`, `tripStart`, `tripData`, `tripEnd`...
+  //
+  // `tripData` (the one that carries live GPS) sends a `data` array of
+  // breadcrumb points; the freshest fix is the LAST element, and its
+  // coordinates sit under `location` (lat/lon) — NOT at the top level. Other
+  // event types put a single location at the root. Be liberal: dig the
+  // newest point out of `data[]`, then accept location/gps nesting or a flat
+  // lat/lon, under several key spellings.
   const vehicleId = body?.vin ?? body?.imei ?? body?.vehicleId ?? null;
-  const loc = body?.location ?? body?.data?.location ?? body ?? {};
+  const points = Array.isArray(body?.data) ? body.data : null;
+  const latest = points && points.length ? points[points.length - 1] : null;
+  const loc =
+    latest?.location ??
+    latest?.gps ??
+    latest ??
+    body?.location ??
+    body?.gps ??
+    body?.data?.location ??
+    body ??
+    {};
   const lat = numeric(loc?.lat ?? loc?.latitude);
   const lng = numeric(loc?.lon ?? loc?.lng ?? loc?.longitude);
-  const heading = numeric(loc?.heading ?? body?.heading);
-  const speedMph = numeric(loc?.speed ?? body?.speed);
+  const heading = numeric(latest?.heading ?? loc?.heading ?? body?.heading);
+  const speedMph = numeric(latest?.speed ?? loc?.speed ?? body?.speed);
 
   // --- TEMP DEBUG: capture every hit (incl. wrong-secret) so we can see what
   // Bouncie actually sends. Remove with the rest of the debug plumbing. ---

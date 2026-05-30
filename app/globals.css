@@ -284,6 +284,7 @@ button.ok:hover:not(:disabled) { background: #c89a44; }
   white-space: nowrap;
 }
 .leaflet-tooltip.van-label::before { display: none; } /* drop the pointer arrow */
+.leaflet-tooltip.van-label.stale { opacity: 0.6; font-weight: 500; } /* parked / out of signal */
 .stop-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .stop-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .stop-actions button { padding: 8px 10px; font-size: 12px; width: auto; }

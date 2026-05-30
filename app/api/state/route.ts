@@ -32,8 +32,15 @@ export async function GET(req: NextRequest) {
 
   // Show every van's last-known position. Freshness is conveyed by the
   // "signal stale (N min)" label the UI derives from updatedAt — we don't
-  // hide an idle/parked van, since Bouncie may go quiet between rides.
-  const liveShuttles = state.shuttles.filter((s) => s.position != null);
+  // hide a recently-idle/parked van, since Bouncie may go quiet between
+  // rides. But a fix older than GHOST_MAX_MS is a dead/leftover marker (a
+  // van that's been off for hours, or stale test data), so drop it entirely
+  // rather than stranding an ancient dot on the map.
+  const GHOST_MAX_MS = 3 * 60 * 60 * 1000; // 3h
+  const now = Date.now();
+  const liveShuttles = state.shuttles.filter(
+    (s) => s.position != null && (s.updatedAt == null || now - s.updatedAt < GHOST_MAX_MS),
+  );
 
   const myId = driverRef?.id ?? null;
   const activeStops = state.stops.filter(
