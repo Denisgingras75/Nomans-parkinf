@@ -17,7 +17,13 @@ type MapShuttle = {
   heading?: number | null;
   speedMph?: number | null;
   label?: string | null;
+  updatedAt?: number | null;
 };
+
+// A fix older than this is "stale": the van is parked or out of signal. We
+// still show its last-known spot, but dimmed and without a (frozen) speed,
+// so a sitting van never looks like it's doing 22 mph.
+const STALE_MS = 10 * 60 * 1000;
 
 type Props = {
   shuttles?: MapShuttle[];
@@ -70,8 +76,19 @@ export default function Map({
           iconSize: [size, size],
           iconAnchor: [size / 2, size / 2],
         });
+      // NoMans is a teardrop PIN (not a round dot) so the destination can't be
+      // mistaken for a van marker.
+      const pin = L.divIcon({
+        className: "nomans-marker",
+        html: `<svg width="26" height="34" viewBox="0 0 26 34" xmlns="http://www.w3.org/2000/svg">
+            <path d="M13 0 C5.8 0 0 5.8 0 13 C0 22 13 34 13 34 C13 34 26 22 26 13 C26 5.8 20.2 0 13 0 Z" fill="${C.gilt}" stroke="${C.paperDeep}" stroke-width="2"/>
+            <circle cx="13" cy="13" r="4.5" fill="${C.paperDeep}"/>
+          </svg>`,
+        iconSize: [26, 34],
+        iconAnchor: [13, 34],
+      });
       iconsRef.current = {
-        nomans: dot(C.gilt, 20),
+        nomans: pin,
         me: dot(C.chart),
         pickup: dot(C.gilt),
         dropoff: dot(C.rust),
@@ -176,18 +193,20 @@ export default function Map({
     JSON.stringify(stops.map((s) => [s.id, s.position.lat, s.position.lng, s.status, s.name])),
   ]);
 
-  function shuttleMarkerHtml(heading: number | null | undefined): string {
+  function shuttleMarkerHtml(heading: number | null | undefined, stale = false): string {
     const rot = typeof heading === "number" && Number.isFinite(heading) ? heading : null;
+    const fill = stale ? C.gilt : C.rust; // dim a parked/out-of-signal van
+    const op = stale ? "opacity:0.45;" : "";
     // Arrow points up by default; CSS rotate aligns to compass heading.
     // When heading is unknown, render a plain dot.
     if (rot === null) {
-      return `<div style="width:20px;height:20px;border-radius:50%;background:${C.rust};border:3px solid ${C.paperDeep};box-shadow:0 0 0 1px rgba(0,0,0,0.45)"></div>`;
+      return `<div style="${op}width:20px;height:20px;border-radius:50%;background:${fill};border:3px solid ${C.paperDeep};box-shadow:0 0 0 1px rgba(0,0,0,0.45)"></div>`;
     }
     return `
-      <div style="position:relative;width:32px;height:32px;">
+      <div style="position:relative;width:32px;height:32px;${op}">
         <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;transform:rotate(${rot}deg);transform-origin:50% 50%;">
           <svg width="28" height="28" viewBox="0 0 28 28" xmlns="http://www.w3.org/2000/svg">
-            <path d="M14 2 L23 24 L14 19 L5 24 Z" fill="${C.rust}" stroke="${C.paperDeep}" stroke-width="1.5" stroke-linejoin="round"/>
+            <path d="M14 2 L23 24 L14 19 L5 24 Z" fill="${fill}" stroke="${C.paperDeep}" stroke-width="1.5" stroke-linejoin="round"/>
           </svg>
         </div>
       </div>
@@ -227,26 +246,31 @@ export default function Map({
         }
       }
 
+      const stale =
+        typeof s.updatedAt === "number" && Date.now() - s.updatedAt > STALE_MS;
       const shuttleIcon = L.divIcon({
-        className: "nomans-shuttle-marker",
-        html: shuttleMarkerHtml(s.heading),
+        className: stale ? "nomans-shuttle-marker stale" : "nomans-shuttle-marker",
+        html: shuttleMarkerHtml(s.heading, stale),
         iconSize: [32, 32],
         iconAnchor: [16, 16],
       });
       const name = s.label ?? "Combi";
-      const speedLabel =
-        typeof s.speedMph === "number" && Number.isFinite(s.speedMph)
-          ? `${name} · ${Math.round(s.speedMph)} mph`
-          : name;
+      // Only show a speed for a fresh fix — a frozen speed on a parked/stale
+      // van is misleading. Stale vans read "Combi · idle" instead.
+      const label = stale
+        ? `${name} · idle`
+        : typeof s.speedMph === "number" && Number.isFinite(s.speedMph)
+        ? `${name} · ${Math.round(s.speedMph)} mph`
+        : name;
       const marker = L.marker([s.position.lat, s.position.lng], { icon: shuttleIcon })
         .addTo(map)
         // Permanent so each van's name floats beside it — lets you tell two
         // combis apart at a glance without tapping.
-        .bindTooltip(speedLabel, {
+        .bindTooltip(label, {
           permanent: true,
           direction: "top",
           offset: [0, -14],
-          className: "van-label",
+          className: stale ? "van-label stale" : "van-label",
         });
       layersRef.current.push(marker);
     }
