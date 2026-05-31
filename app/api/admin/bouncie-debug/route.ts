@@ -23,9 +23,21 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: true, cleared: true });
   }
 
+  // Safe fingerprint of the configured webhook secret so the owner can
+  // eyeball-match it against the `?secret=` on the Bouncie webhook URL,
+  // without exposing the full value. Confirms the Vercel env side.
+  const secret = process.env.BOUNCIE_WEBHOOK_SECRET;
+  const secretConfig = secret
+    ? { set: true, length: secret.length, head: secret.slice(0, 4), tail: secret.slice(-4) }
+    : {
+        set: false,
+        note: "BOUNCIE_WEBHOOK_SECRET is NOT set in Vercel — set it to match the ?secret= in the Bouncie webhook URL.",
+      };
+
   const entries = await getBouncieDebug();
   return NextResponse.json({
     count: entries.length,
+    secretConfig,
     hint:
       entries.length === 0
         ? "No webhook hits captured yet. If this stays empty while a van drives, Bouncie isn't reaching this URL at all (check the webhook URL/enabled in the Bouncie portal)."
