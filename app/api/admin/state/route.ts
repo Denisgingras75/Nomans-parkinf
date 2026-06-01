@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
+  getBouncieDebug,
   getDrivers,
   getManagers,
   getRideArchive,
@@ -45,6 +46,31 @@ export async function GET(req: NextRequest) {
   const bootstrap = isBootstrap(pass);
   const managers = bootstrap ? await getManagers() : undefined;
 
+  // Bouncie / live-GPS connection health, so the owner gets *feedback* in the
+  // UI instead of having to curl the hidden /api/admin/bouncie-debug route.
+  // We surface a safe fingerprint of the configured secret (head/tail only),
+  // the optional vehicle filter, and a summary of the most recent webhook hit
+  // so any broken link in the chain (URL → secret → vehicle filter → parser)
+  // is visible at a glance.
+  const debug = await getBouncieDebug();
+  const secret = process.env.BOUNCIE_WEBHOOK_SECRET;
+  const lastHit = debug[0] ?? null;
+  const bouncie = {
+    secretSet: Boolean(secret),
+    secretHint: secret ? `${secret.slice(0, 4)}…${secret.slice(-4)}` : null,
+    vehicleFilter: process.env.SHUTTLE_VEHICLE_ID ?? null,
+    recentHits: debug.length,
+    lastHit: lastHit
+      ? {
+          receivedAt: lastHit.receivedAt,
+          secretOk: lastHit.secretOk,
+          hadBody: lastHit.hadBody,
+          vehicleId: lastHit.vehicleId,
+          gotCoords: lastHit.parsed.lat != null && lastHit.parsed.lng != null,
+        }
+      : null,
+  };
+
   return NextResponse.json({
     settings,
     drivers,
@@ -57,5 +83,6 @@ export async function GET(req: NextRequest) {
     onlineReason: onlineReason(settings),
     isBootstrap: bootstrap,
     managers,
+    bouncie,
   });
 }

@@ -48,8 +48,15 @@ export async function POST(req: NextRequest) {
     body?.data?.location ??
     body ??
     {};
-  const lat = numeric(loc?.lat ?? loc?.latitude);
-  const lng = numeric(loc?.lon ?? loc?.lng ?? loc?.longitude);
+  // GeoJSON-style fallback: some payloads carry `coordinates: [lng, lat]`
+  // (note the order) instead of named lat/lon fields.
+  const coordPair = Array.isArray(loc?.coordinates)
+    ? loc.coordinates
+    : Array.isArray(latest?.coordinates)
+    ? latest.coordinates
+    : null;
+  const lat = numeric(loc?.lat ?? loc?.latitude ?? coordPair?.[1]);
+  const lng = numeric(loc?.lon ?? loc?.lng ?? loc?.longitude ?? coordPair?.[0]);
   const heading = numeric(latest?.heading ?? loc?.heading ?? body?.heading);
   const speedMph = numeric(latest?.speed ?? loc?.speed ?? body?.speed);
 

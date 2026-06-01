@@ -19,6 +19,23 @@ type AdminState = {
   onlineReason: OnlineReason;
   isBootstrap: boolean;
   managers?: Manager[];
+  bouncie?: BouncieStatus;
+};
+
+type BouncieStatus = {
+  secretSet: boolean;
+  secretHint: string | null;
+  vehicleFilter: string | null;
+  recentHits: number;
+  lastHit:
+    | {
+        receivedAt: number;
+        secretOk: boolean;
+        hadBody: boolean;
+        vehicleId: string | null;
+        gotCoords: boolean;
+      }
+    | null;
 };
 
 export default function AdminPage() {
@@ -296,7 +313,7 @@ export default function AdminPage() {
     );
   }
 
-  const { settings, drivers, today, legacyDriverEnabled, smsConfigured, shuttles, onboard, capacity, onlineReason } = data;
+  const { settings, drivers, today, legacyDriverEnabled, smsConfigured, shuttles, onboard, capacity, onlineReason, bouncie } = data;
   // Freshest fix across all vans, for the "updated Ns ago" readout.
   const newestUpdate = shuttles.reduce<number | null>(
     (max, s) => (s.updatedAt != null && (max == null || s.updatedAt > max) ? s.updatedAt : max),
@@ -426,6 +443,9 @@ export default function AdminPage() {
           </button>
         </div>
       </div>
+
+      {/* Live GPS (Bouncie) connection health */}
+      {bouncie && <BouncieStatusCard b={bouncie} shuttles={shuttles} />}
 
       {/* Managers — only the bootstrap (env-var passcode) can see or
           manage other managers. Hidden when a manager is logged in. */}
@@ -670,6 +690,123 @@ export default function AdminPage() {
         </button>
       </div>
     </main>
+  );
+}
+
+function BouncieStatusCard({
+  b,
+  shuttles,
+}: {
+  b: BouncieStatus;
+  shuttles: AdminState["shuttles"];
+}) {
+  const ago = (ts: number) => {
+    const s = Math.round((Date.now() - ts) / 1000);
+    if (s < 60) return `${s}s ago`;
+    if (s < 3600) return `${Math.round(s / 60)}m ago`;
+    return `${Math.round(s / 3600)}h ago`;
+  };
+
+  // Walk the connection chain and report the first broken link, so the owner
+  // sees an actionable verdict instead of raw fields. Order matters: secret in
+  // Vercel → Bouncie actually reaching the URL → secret match → vehicle filter
+  // → coordinates parsed.
+  let tone: "ok" | "warn" | "danger" = "ok";
+  let verdict = "Connected — receiving live GPS.";
+  let fix: string | null = null;
+  const hit = b.lastHit;
+  if (!b.secretSet) {
+    tone = "danger";
+    verdict = "BOUNCIE_WEBHOOK_SECRET is not set in Vercel.";
+    fix = "Set it in Vercel env, then redeploy. It must match the ?secret= in the Bouncie webhook URL.";
+  } else if (b.recentHits === 0 || !hit) {
+    tone = "warn";
+    verdict = "No webhook hits captured yet.";
+    fix = "If this stays empty while a van is driving, Bouncie isn't reaching this URL. Check the webhook URL and that the 'location' event is enabled in the Bouncie Developer Portal.";
+  } else if (!hit.secretOk) {
+    tone = "danger";
+    verdict = "Last hit was rejected — wrong secret.";
+    fix = "The ?secret= in the Bouncie webhook URL doesn't match BOUNCIE_WEBHOOK_SECRET in Vercel. Make them identical.";
+  } else if (b.vehicleFilter && hit.vehicleId && hit.vehicleId !== b.vehicleFilter) {
+    tone = "danger";
+    verdict = "Fixes ignored — vehicle filter mismatch.";
+    fix = `SHUTTLE_VEHICLE_ID is "${b.vehicleFilter}" but Bouncie is sending "${hit.vehicleId}". Match it or clear SHUTTLE_VEHICLE_ID to accept all vehicles.`;
+  } else if (!hit.gotCoords) {
+    tone = "warn";
+    verdict = "Connected, but no coordinates in the last payload.";
+    fix = "The secret is right but the parser couldn't find lat/lng. This can be a non-location event (connect/disconnect). If it persists while driving, the payload shape needs a parser tweak.";
+  }
+
+  const toneColor =
+    tone === "ok" ? "var(--ok)" : tone === "warn" ? "var(--accent)" : "var(--danger)";
+
+  const Row = ({ label, value, color }: { label: string; value: string; color?: string }) => (
+    <div style={{ display: "flex", justifyContent: "space-between", gap: 12, padding: "4px 0" }}>
+      <span className="note">{label}</span>
+      <span style={{ fontWeight: 600, color: color ?? "var(--text-bright)", textAlign: "right" }}>{value}</span>
+    </div>
+  );
+
+  return (
+    <div className="card">
+      <h2 style={{ margin: "0 0 8px" }}>Live GPS (Bouncie)</h2>
+      <div
+        style={{
+          fontWeight: 700,
+          color: toneColor,
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+        }}
+      >
+        <span>{tone === "ok" ? "●" : tone === "warn" ? "▲" : "■"}</span>
+        <span>{verdict}</span>
+      </div>
+      {fix && (
+        <div className="note" style={{ marginTop: 6 }}>
+          {fix}
+        </div>
+      )}
+      <hr style={{ border: "none", borderTop: "1px solid var(--border)", margin: "12px 0" }} />
+      <Row
+        label="Webhook secret (Vercel)"
+        value={b.secretSet ? `set · ${b.secretHint}` : "NOT set"}
+        color={b.secretSet ? "var(--ok)" : "var(--danger)"}
+      />
+      <Row label="Vehicle filter (SHUTTLE_VEHICLE_ID)" value={b.vehicleFilter ?? "none (all vehicles)"} />
+      <Row label="Recent webhook hits captured" value={String(b.recentHits)} />
+      {hit ? (
+        <>
+          <Row label="Last hit" value={ago(hit.receivedAt)} />
+          <Row
+            label="… secret matched"
+            value={hit.secretOk ? "yes" : "no"}
+            color={hit.secretOk ? "var(--ok)" : "var(--danger)"}
+          />
+          <Row label="… vehicle id sent" value={hit.vehicleId ?? "(none)"} />
+          <Row
+            label="… coordinates parsed"
+            value={hit.gotCoords ? "yes" : "no"}
+            color={hit.gotCoords ? "var(--ok)" : "var(--accent)"}
+          />
+        </>
+      ) : (
+        <Row label="Last hit" value="never" color="var(--accent)" />
+      )}
+      <hr style={{ border: "none", borderTop: "1px solid var(--border)", margin: "12px 0" }} />
+      <div className="note" style={{ marginBottom: 6 }}>Van positions in store</div>
+      {shuttles.length === 0 ? (
+        <div className="note">No van positions yet.</div>
+      ) : (
+        shuttles.map((s) => (
+          <Row
+            key={s.id}
+            label={s.label ?? s.id}
+            value={s.updatedAt != null ? `fix ${ago(s.updatedAt)}` : "no fix"}
+          />
+        ))
+      )}
+    </div>
   );
 }
 
