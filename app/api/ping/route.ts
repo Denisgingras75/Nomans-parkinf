@@ -102,6 +102,12 @@ export async function POST(req: NextRequest) {
   if (settings.alertsEnabled) {
     const origin = new URL(req.url).origin;
     const where = direction === "to-nomans" ? "TO NoMans" : "FROM NoMans";
+    // Where the driver actually drives to first = the PICKUP leg. For a
+    // to-NoMans ride that's the passenger's GPS spot; for a from-NoMans ride
+    // it's the restaurant. Pre-build the directions URL so the push can open
+    // maps straight to the right point.
+    const pickupPos = direction === "to-nomans" ? { lat, lng } : settings.nomans;
+    const navUrl = `https://www.google.com/maps/dir/?api=1&destination=${pickupPos.lat},${pickupPos.lng}`;
     const noteTail = note ? ` Note: "${note.slice(0, 80)}"` : "";
     const phoneTail = phone ? ` ${phone}` : "";
     const smsBody = `🚐 NoMans Combi: ${where}, ${name}${phoneTail} (party of ${partySize}).${noteTail} Open ${origin}/driver`;
@@ -117,6 +123,7 @@ export async function POST(req: NextRequest) {
         title: "🚐 New pickup",
         body: `${where} — ${name} (party of ${partySize})${note ? ` · "${note.slice(0, 80)}"` : ""}`,
         url: "/driver",
+        navUrl,
       }),
       notifyOnShiftDrivers(drivers, smsBody),
     ]);

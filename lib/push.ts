@@ -27,6 +27,9 @@ export type PushPayload = {
   body: string;
   url?: string;
   tag?: string;
+  // Pre-built maps directions URL to the pickup. When present the service
+  // worker shows a "🧭 Navigate" action button that opens it directly.
+  navUrl?: string;
 };
 
 // Fan-out to every push subscription belonging to a driver in `driverIds`
