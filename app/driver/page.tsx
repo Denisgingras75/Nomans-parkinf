@@ -378,7 +378,12 @@ export default function DriverPage() {
   }
 
   const stops = state?.stops ?? [];
-  const queued = stops.filter((s) => s.status === "queued" || s.status === "enroute");
+  // Include "accepted" — a ride the driver just claimed must stay in their
+  // queue so they can mark en route / picked up / release it. Leaving it out
+  // made claimed rides vanish the instant Accept was tapped.
+  const queued = stops.filter(
+    (s) => s.status === "queued" || s.status === "accepted" || s.status === "enroute",
+  );
   const shuttles = (state?.shuttles ?? []).filter(
     (s): s is ShuttleFeed & { position: LatLng } => s.position != null,
   );
