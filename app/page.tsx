@@ -375,6 +375,21 @@ export default function PassengerPage() {
         {" · "}
         {state ? `${state.onboard}/${state.capacity} on board` : ""}
       </p>
+
+      <footer
+        className="note"
+        style={{
+          textAlign: "center",
+          marginTop: 8,
+          paddingBottom: 12,
+          fontSize: 12,
+          opacity: 0.6,
+        }}
+      >
+        <a href="/driver">Driver login</a>
+        {" · "}
+        <a href="/admin">Owner / Manager</a>
+      </footer>
     </main>
   );
 }
