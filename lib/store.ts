@@ -247,13 +247,19 @@ export async function setStopStatus(id: string, status: StopStatus): Promise<Sto
 // active leg of that ride — both the pickup and the dropoff. Returns the
 // cancelled stops, [] if the ride is already past cancelling (picked-up or
 // terminal), or null if the id is unknown.
+// A leg can still be self-cancelled until the driver actually picks the
+// passenger up. "accepted" (a driver claimed it) and "enroute" still count —
+// the passenger just changed their mind before the van arrived. Only
+// "picked-up" and terminal states (dropped-off/cancelled) are too late.
+const CANCELLABLE: ReadonlySet<StopStatus> = new Set(["queued", "accepted", "enroute"]);
+
 export async function cancelRide(stopId: string): Promise<Stop[] | null> {
   const state = await readState();
   const target = state.stops.find((s) => s.id === stopId);
   if (!target) return null;
   // Once a leg is picked up (or already terminal) it's too late to self-cancel
   // — the driver is mid-ride. They wave the driver off in person from here.
-  if (target.status !== "queued" && target.status !== "enroute") return [];
+  if (!CANCELLABLE.has(target.status)) return [];
 
   const now = Date.now();
   // Match the whole ride by rideId; fall back to the single stop for legacy
@@ -263,7 +269,7 @@ export async function cancelRide(stopId: string): Promise<Stop[] | null> {
 
   const cancelled: Stop[] = [];
   for (const s of state.stops) {
-    if (inRide(s) && (s.status === "queued" || s.status === "enroute")) {
+    if (inRide(s) && CANCELLABLE.has(s.status)) {
       s.status = "cancelled";
       s.updatedAt = now;
       cancelled.push(s);
