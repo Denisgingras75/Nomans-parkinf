@@ -348,7 +348,22 @@ export default function PassengerPage() {
           nomans={nomans}
           me={me}
           stops={state?.stops ?? []}
+          // Let the rider correct a fuzzy GPS pin by dragging — but only
+          // before the ride is placed; once pinged, the stop is fixed.
+          onMeDrag={
+            me && !stopId
+              ? (p) => {
+                  setMe(p);
+                  setMeLabel("Adjusted pin");
+                }
+              : undefined
+          }
         />
+        {me && !stopId && (
+          <p className="note" style={{ textAlign: "center", margin: "6px 0 0" }}>
+            📍 Pin not quite right? Drag the blue dot to your exact spot.
+          </p>
+        )}
       </div>
 
       <p className="note" style={{ textAlign: "center" }}>

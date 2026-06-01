@@ -31,6 +31,10 @@ type Props = {
   me?: LatLng | null;
   stops?: MapStop[];
   className?: string;
+  // When provided, the "You" marker becomes draggable and this fires with the
+  // new coordinate on drag-end — lets a passenger nudge a fuzzy GPS pin to
+  // their real pickup spot before pinging.
+  onMeDrag?: (pos: LatLng) => void;
 };
 
 // Leaflet's divIcon HTML inherits :root vars from globals.css, so use
@@ -51,6 +55,7 @@ export default function Map({
   me,
   stops = [],
   className,
+  onMeDrag,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
@@ -275,7 +280,25 @@ export default function Map({
       layersRef.current.push(marker);
     }
 
-    if (me) add(me, iconsRef.current.me, "You");
+    if (me) {
+      const meMarker = L.marker([me.lat, me.lng], {
+        icon: iconsRef.current.me,
+        draggable: Boolean(onMeDrag),
+        autoPan: true,
+      })
+        .addTo(map)
+        .bindTooltip(onMeDrag ? "You — drag to adjust" : "You", {
+          direction: "top",
+          offset: [0, -8],
+        });
+      if (onMeDrag) {
+        meMarker.on("dragend", () => {
+          const ll = meMarker.getLatLng();
+          onMeDrag({ lat: ll.lat, lng: ll.lng });
+        });
+      }
+      layersRef.current.push(meMarker);
+    }
     for (const s of stops) {
       add(
         s.position,
