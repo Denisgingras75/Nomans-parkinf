@@ -269,8 +269,9 @@ export default function DriverPage() {
   };
 
   // Accept (claim) or decline a whole ride — both legs move together.
-  const claim = async (rideId: string | undefined, action: "accept" | "decline") => {
-    if (!rideId) return;
+  // Returns whether the action succeeded so callers can chain off it.
+  const claim = async (rideId: string | undefined, action: "accept" | "decline"): Promise<boolean> => {
+    if (!rideId) return false;
     setError(null);
     const res = await fetch("/api/stops", {
       method: "POST",
@@ -280,7 +281,23 @@ export default function DriverPage() {
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
       setError(data.error ?? "Action failed");
+      return false;
     }
+    return true;
+  };
+
+  // Accept a ride and, on success, hand off to the phone's maps app with
+  // turn-by-turn to the pickup. The blank tab is opened synchronously inside
+  // the tap so iOS Safari doesn't treat the later redirect as a blocked
+  // non-gesture popup; we point it at the directions URL once the claim
+  // confirms, or close it if another driver beat us to the ride (409).
+  const acceptAndNavigate = (rideId: string | undefined, navUrl: string) => {
+    const navWin = typeof window !== "undefined" ? window.open("", "_blank") : null;
+    claim(rideId, "accept").then((ok) => {
+      if (!navWin) return;
+      if (ok) navWin.location.href = navUrl;
+      else navWin.close();
+    });
   };
 
   // ----- Driver-phone GPS broadcast -----
@@ -535,8 +552,8 @@ export default function DriverPage() {
                       {/* Unclaimed: accept/decline the whole ride from its pickup leg. */}
                       {unclaimed && s.kind === "pickup" && (
                         <>
-                          <button className="ok" onClick={() => claim(s.rideId, "accept")}>
-                            ✅ Accept
+                          <button className="ok" onClick={() => acceptAndNavigate(s.rideId, navUrl)}>
+                            ✅ Accept &amp; navigate
                           </button>
                           <button className="secondary" onClick={() => claim(s.rideId, "decline")}>
                             Decline
