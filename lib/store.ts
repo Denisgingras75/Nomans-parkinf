@@ -24,11 +24,28 @@ const KV_PUSH_SUBS_KEY = "nomans:push-subs:v1";
 const KV_RIDES_PREFIX = "nomans:rides:"; // suffix: YYYY-MM-DD (Eastern)
 const KV_BOUNCIE_DEBUG_KEY = "nomans:bouncie-debug:v1"; // TEMP — remove after parser confirmed
 
-// Always attempt KV first. The @vercel/kv client throws if env vars
-// aren't injected; we catch in the helpers below and fall back to
-// in-memory so `npm run dev` without KV still works.
+// Resolve the Upstash REST credentials from EITHER naming convention:
+//   - KV_REST_API_URL / KV_REST_API_TOKEN     (legacy "Vercel KV" integration)
+//   - UPSTASH_REDIS_REST_URL / ..._TOKEN      (current Upstash Marketplace one)
+// The newer Marketplace integration often injects only the UPSTASH_* names, so
+// reading just the KV_* ones silently dropped us to memory-only — fatal on
+// serverless, where the webhook and the page-poll land on different instances.
+function kvCreds(): { url: string; token: string } | null {
+  const url = process.env.KV_REST_API_URL ?? process.env.UPSTASH_REDIS_REST_URL;
+  const token = process.env.KV_REST_API_TOKEN ?? process.env.UPSTASH_REDIS_REST_TOKEN;
+  return url && token ? { url, token } : null;
+}
+
+// Always attempt KV first. The helpers below fall back to in-memory when no
+// credentials are present so `npm run dev` without KV still works.
 function useKV(): boolean {
-  return Boolean(process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN);
+  return kvCreds() != null;
+}
+
+// Public flag so /admin can warn the owner when persistence is OFF (memory
+// only) — the state most likely to make live GPS silently never appear.
+export function isKvConfigured(): boolean {
+  return useKV();
 }
 
 const memory = globalThis as unknown as {
@@ -111,9 +128,9 @@ function migrateState(raw: any): AppState {
 // initialization which was causing cold-start instances to read env
 // vars before Vercel had fully injected them.
 async function kvGet<T>(key: string): Promise<T | null> {
-  const url = process.env.KV_REST_API_URL;
-  const token = process.env.KV_REST_API_TOKEN;
-  if (!url || !token) return null;
+  const creds = kvCreds();
+  if (!creds) return null;
+  const { url, token } = creds;
   const res = await fetch(`${url}/get/${encodeURIComponent(key)}`, {
     headers: { Authorization: `Bearer ${token}` },
     cache: "no-store",
@@ -138,9 +155,9 @@ async function kvGet<T>(key: string): Promise<T | null> {
 }
 
 async function kvSet<T>(key: string, value: T): Promise<void> {
-  const url = process.env.KV_REST_API_URL;
-  const token = process.env.KV_REST_API_TOKEN;
-  if (!url || !token) return;
+  const creds = kvCreds();
+  if (!creds) return;
+  const { url, token } = creds;
   await fetch(`${url}/set/${encodeURIComponent(key)}`, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}` },

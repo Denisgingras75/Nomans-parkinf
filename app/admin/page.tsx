@@ -25,6 +25,7 @@ type AdminState = {
 type BouncieStatus = {
   secretSet: boolean;
   secretHint: string | null;
+  kvConfigured: boolean;
   vehicleFilter: string | null;
   recentHits: number;
   lastHit:
@@ -715,7 +716,11 @@ function BouncieStatusCard({
   let verdict = "Connected — receiving live GPS.";
   let fix: string | null = null;
   const hit = b.lastHit;
-  if (!b.secretSet) {
+  if (!b.kvConfigured) {
+    tone = "danger";
+    verdict = "Storage is OFF — positions can't persist.";
+    fix = "No Upstash/KV credentials in this deployment, so state lives in throwaway memory. The Bouncie webhook and this page run on different serverless instances, so a fix written by one is invisible to the other — the combi will never show. Connect the Upstash database to this Vercel project (it sets KV_REST_API_* or UPSTASH_REDIS_REST_*), then redeploy.";
+  } else if (!b.secretSet) {
     tone = "danger";
     verdict = "BOUNCIE_WEBHOOK_SECRET is not set in Vercel.";
     fix = "Set it in Vercel env, then redeploy. It must match the ?secret= in the Bouncie webhook URL.";
@@ -768,6 +773,11 @@ function BouncieStatusCard({
         </div>
       )}
       <hr style={{ border: "none", borderTop: "1px solid var(--border)", margin: "12px 0" }} />
+      <Row
+        label="Persistent storage (KV/Upstash)"
+        value={b.kvConfigured ? "connected" : "OFF — memory only"}
+        color={b.kvConfigured ? "var(--ok)" : "var(--danger)"}
+      />
       <Row
         label="Webhook secret (Vercel)"
         value={b.secretSet ? `set · ${b.secretHint}` : "NOT set"}

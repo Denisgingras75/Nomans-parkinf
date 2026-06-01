@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   getBouncieDebug,
+  isKvConfigured,
   getDrivers,
   getManagers,
   getRideArchive,
@@ -58,6 +59,7 @@ export async function GET(req: NextRequest) {
   const bouncie = {
     secretSet: Boolean(secret),
     secretHint: secret ? `${secret.slice(0, 4)}…${secret.slice(-4)}` : null,
+    kvConfigured: isKvConfigured(),
     vehicleFilter: process.env.SHUTTLE_VEHICLE_ID ?? null,
     recentHits: debug.length,
     lastHit: lastHit
