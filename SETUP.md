@@ -18,9 +18,13 @@ Production scope. Redeploy. This unlocks `/admin`.
 
 Without this the queue and settings die on every serverless cold start. Free tier is plenty.
 
-Vercel project → Storage → Create Database → **Upstash Redis** (under Marketplace). Click Connect. Vercel auto-sets `KV_REST_API_URL` and `KV_REST_API_TOKEN`. Redeploy.
+Vercel project → Storage → Create Database → **Upstash Redis** (under Marketplace). Click Connect, pick this project, then **Redeploy** (env vars only reach builds made *after* connecting).
 
-Verify: `/admin` should let you save a setting (e.g. capacity) and have it survive a refresh.
+The integration injects the credentials under **one of two naming conventions** depending on its version: the legacy `KV_REST_API_URL` / `KV_REST_API_TOKEN`, or the newer `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN`. **The app reads either** (`lib/store.ts` → `kvCreds()`), so you don't have to rename anything — but if you only see the `UPSTASH_*` pair, that's expected and fine.
+
+Verify two ways:
+- `/admin` should let you save a setting (e.g. capacity) and have it survive a refresh.
+- `/admin` → **Live GPS (Bouncie)** card → top row **Persistent storage** should read **"connected"**. If it says **"OFF — memory only"**, the database isn't connected to this project or you haven't redeployed since connecting — and live GPS will never persist (the webhook and the map run on different serverless instances).
 
 ## 3. Twilio SMS (recommended) — 5 min
 
@@ -52,8 +56,13 @@ BOUNCIE_WEBHOOK_SECRET = whatever-long-random-string
 
 ```
 URL: https://nomansdrive.com/api/bouncie/webhook?secret=<same-string>
-Events: location
+Events: tripStart, tripData, tripEnd
 ```
+
+`tripData` is the one that carries live GPS breadcrumbs — it only fires
+**while the vehicle is on an active trip** (engine running, moving). A
+parked van sends nothing, so the combi won't appear until it actually
+drives. (Bouncie has no event literally named "location".)
 
 3. Optional — if you have other Bouncie vehicles on the same account, also set:
 
