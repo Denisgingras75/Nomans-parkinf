@@ -4,6 +4,7 @@ import dynamic from "next/dynamic";
 import { useEffect, useRef, useState } from "react";
 import type { BBox, LatLng } from "@/lib/types";
 import { createChimeContext, playChime } from "@/lib/chime";
+import { distanceMiles } from "@/lib/geofence";
 
 const Map = dynamic(() => import("@/components/Map"), { ssr: false });
 
@@ -68,6 +69,9 @@ export default function DriverPage() {
     "unknown" | "unsupported" | "denied" | "off" | "on" | "working"
   >("unknown");
   const [pushError, setPushError] = useState<string | null>(null);
+  // This device's location (best-effort) so each unclaimed pickup can show how
+  // far away it is — lets the driver judge accept/decline at a glance.
+  const [myPos, setMyPos] = useState<LatLng | null>(null);
 
   const audioCtxRef = useRef<AudioContext | null>(null);
   const knownPickupIdsRef = useRef<Set<string>>(new Set());
@@ -200,6 +204,19 @@ export default function DriverPage() {
     checkPushStatus();
   }, [authed]);
 
+  // Best-effort location watch for the distance-to-pickup readout. Independent
+  // of the GPS broadcast toggle; if the driver denies location, distances just
+  // don't show.
+  useEffect(() => {
+    if (!authed || typeof navigator === "undefined" || !navigator.geolocation) return;
+    const id = navigator.geolocation.watchPosition(
+      (pos) => setMyPos({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+      () => {},
+      { enableHighAccuracy: true, maximumAge: 15000, timeout: 20000 },
+    );
+    return () => navigator.geolocation.clearWatch(id);
+  }, [authed]);
+
   const enablePush = async () => {
     setPushError(null);
     setPushStatus("working");
@@ -302,16 +319,15 @@ export default function DriverPage() {
     return true;
   };
 
-  // Accept a ride and hand off to the phone's maps app with turn-by-turn to
-  // the pickup. We open the directions URL *synchronously* inside the tap —
-  // the old "open blank tab, redirect after the claim resolves" trick was
-  // getting popup-blocked on mobile (window.open returned null), so the map
-  // never opened even though the claim itself succeeded. A direct
-  // user-gesture navigation to the real URL isn't blocked. The claim runs in
-  // parallel; if it fails the card surfaces the error and stays put.
-  const acceptAndNavigate = (rideId: string | undefined, navUrl: string) => {
-    if (typeof window !== "undefined") window.open(navUrl, "_blank", "noopener");
-    claim(rideId, "accept");
+  // Accept a ride, THEN hand off to maps — only if the claim actually wins.
+  // Claiming first means the loser of a simultaneous accept (two drivers tap
+  // the same ping) doesn't get sent driving to a pickup that isn't theirs; the
+  // 409 surfaces on the card instead. Trade-off: the maps tab opens after the
+  // network round-trip, so mobile may need a second tap — the claimed card's
+  // "Navigate" link is the fallback.
+  const accept = async (rideId: string | undefined, navUrl: string) => {
+    const ok = await claim(rideId, "accept");
+    if (ok && typeof window !== "undefined") window.open(navUrl, "_blank", "noopener");
   };
 
   // Drop a ride out of this driver's view right away (don't wait for the poll).
@@ -582,6 +598,7 @@ export default function DriverPage() {
             const mine = !!s.assignedDriverId && s.assignedDriverId === myId;
             const claimedByOther = !!s.assignedDriverId && !mine;
             const unclaimed = !s.assignedDriverId;
+            const distMi = myPos && s.kind === "pickup" ? distanceMiles(myPos, s.position) : null;
             // Show one "Finished" shortcut per ride: on the pickup card while
             // it's still in the queue, otherwise on the dropoff card (the
             // pickup leg drops out once it's marked picked-up).
@@ -617,6 +634,11 @@ export default function DriverPage() {
                   </div>
                 </div>
                 {s.note && <div className="note">&ldquo;{s.note}&rdquo;</div>}
+                {distMi != null && (
+                  <div className="note" style={{ marginTop: 4 }}>
+                    📍 {distMi < 0.1 ? "right here" : `${distMi.toFixed(1)} mi away`}
+                  </div>
+                )}
 
                 {claimedByOther ? (
                   <div className="note" style={{ marginTop: 8 }}>
@@ -634,14 +656,16 @@ export default function DriverPage() {
                     )}
                     <div className="stop-actions">
                       <a className="nav-link" href={navUrl} target="_blank" rel="noopener noreferrer">
-                        🧭 Navigate
+                        {unclaimed ? "📍 View on map" : "🧭 Navigate"}
                       </a>
 
-                      {/* Unclaimed: accept/decline the whole ride from its pickup leg. */}
+                      {/* Unclaimed: peek the location (View, above), then accept/
+                          decline the whole ride from its pickup leg. Accept claims
+                          first and only opens maps if it wins. */}
                       {unclaimed && s.kind === "pickup" && (
                         <>
-                          <button className="ok" onClick={() => acceptAndNavigate(s.rideId, navUrl)}>
-                            ✅ Accept &amp; navigate
+                          <button className="ok" onClick={() => accept(s.rideId, navUrl)}>
+                            ✅ Accept
                           </button>
                           <button className="secondary" onClick={() => setDeclineFor(s.rideId ?? null)}>
                             Decline
