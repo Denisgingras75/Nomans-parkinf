@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { useEffect, useRef, useState } from "react";
-import type { LatLng } from "@/lib/types";
+import type { BBox, LatLng } from "@/lib/types";
 import { createChimeContext, playChime } from "@/lib/chime";
 
 const Map = dynamic(() => import("@/components/Map"), { ssr: false });
@@ -14,6 +14,7 @@ type Stop = {
   partySize: number;
   status: "queued" | "accepted" | "enroute" | "picked-up" | "dropped-off" | "cancelled";
   position: LatLng;
+  createdAt?: number;
   name?: string;
   note?: string;
   phone?: string | null;
@@ -36,6 +37,7 @@ type StateResponse = {
   capacity: number;
   stops: Stop[];
   nomans: LatLng;
+  bounds?: BBox;
   me: { id: string; name: string; onShift: boolean; phone: string | null } | null;
 };
 
@@ -48,6 +50,9 @@ export default function DriverPage() {
   const [broadcasting, setBroadcasting] = useState(false);
   const [broadcastError, setBroadcastError] = useState<string | null>(null);
   const [shiftToggling, setShiftToggling] = useState(false);
+  // Rides the driver just declined/finished — hidden from the queue immediately
+  // so the card clears on tap instead of lingering until the next 4s poll.
+  const [hiddenRides, setHiddenRides] = useState<Set<string>>(() => new Set());
   const [pushStatus, setPushStatus] = useState<
     "unknown" | "unsupported" | "denied" | "off" | "on" | "working"
   >("unknown");
@@ -298,8 +303,21 @@ export default function DriverPage() {
     claim(rideId, "accept");
   };
 
+  // Drop a ride out of this driver's view right away (don't wait for the poll).
+  const hideRide = (rideId?: string) => {
+    if (!rideId) return;
+    setHiddenRides((prev) => new Set(prev).add(rideId));
+  };
+
+  // Decline = cancel the ride outright (notifies the passenger) and clear it
+  // from the queue on the spot.
+  const decline = async (rideId: string | undefined) => {
+    const ok = await claim(rideId, "decline");
+    if (ok) hideRide(rideId);
+  };
+
   // "Finished" — complete the whole ride in one tap. Both legs go terminal and
-  // the ride drops out of the queue on the next poll.
+  // the ride drops out of the queue immediately.
   const finish = async (rideId: string | undefined) => {
     if (!rideId) return;
     setError(null);
@@ -308,7 +326,9 @@ export default function DriverPage() {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ action: "finish", rideId, passcode }),
     });
-    if (!res.ok) {
+    if (res.ok) {
+      hideRide(rideId);
+    } else {
       const data = await res.json().catch(() => ({}));
       setError(data.error ?? "Couldn't clear the ride");
     }
@@ -395,9 +415,12 @@ export default function DriverPage() {
   // Include "accepted" — a ride the driver just claimed must stay in their
   // queue so they can mark en route / picked up / release it. Leaving it out
   // made claimed rides vanish the instant Accept was tapped.
-  const queued = stops.filter(
-    (s) => s.status === "queued" || s.status === "accepted" || s.status === "enroute",
-  );
+  // Newest first so a fresh ping lands at the top; declined/finished rides are
+  // hidden optimistically until the poll catches up.
+  const queued = stops
+    .filter((s) => s.status === "queued" || s.status === "accepted" || s.status === "enroute")
+    .filter((s) => !(s.rideId && hiddenRides.has(s.rideId)))
+    .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
   const shuttles = (state?.shuttles ?? []).filter(
     (s): s is ShuttleFeed & { position: LatLng } => s.position != null,
   );
@@ -546,15 +569,32 @@ export default function DriverPage() {
               (q) => q.rideId === s.rideId && q.kind === "pickup",
             );
             const showFinish = mine && (s.kind === "pickup" || !siblingPickupActive);
+            // Freshness: an unclaimed pickup that just came in. Highlight it and
+            // badge it "NEW" so a driver instantly sees which ping is newest.
+            const ageMs = s.createdAt ? Date.now() - s.createdAt : null;
+            const fresh = unclaimed && s.kind === "pickup" && ageMs != null && ageMs < 90_000;
+            const ago =
+              ageMs == null
+                ? null
+                : ageMs < 60_000
+                ? `${Math.max(1, Math.round(ageMs / 1000))}s ago`
+                : `${Math.round(ageMs / 60_000)}m ago`;
             return (
-              <div key={s.id} className={`stop${claimedByOther ? " claimed-other" : ""}`}>
+              <div
+                key={s.id}
+                className={`stop${claimedByOther ? " claimed-other" : ""}${fresh ? " fresh" : ""}`}
+              >
                 <div className="stop-head">
                   <div>
+                    {fresh && <span className="tag new-ping">🆕 NEW</span>}{fresh ? " " : ""}
                     <span className={`tag ${s.kind}`}>{s.kind}</span>{" "}
                     <strong>{s.name ?? "Guest"}</strong>{" "}
                     <span className="note">× {s.partySize}</span>
                   </div>
-                  <span className={`tag ${s.status === "queued" ? "queued" : "enroute"}`}>{s.status}</span>
+                  <div style={{ textAlign: "right" }}>
+                    <span className={`tag ${s.status === "queued" ? "queued" : "enroute"}`}>{s.status}</span>
+                    {ago && <div className="note" style={{ fontSize: 11, marginTop: 2 }}>{ago}</div>}
+                  </div>
                 </div>
                 {s.note && <div className="note">&ldquo;{s.note}&rdquo;</div>}
 
@@ -583,7 +623,7 @@ export default function DriverPage() {
                           <button className="ok" onClick={() => acceptAndNavigate(s.rideId, navUrl)}>
                             ✅ Accept &amp; navigate
                           </button>
-                          <button className="secondary" onClick={() => claim(s.rideId, "decline")}>
+                          <button className="secondary" onClick={() => decline(s.rideId)}>
                             Decline
                           </button>
                         </>
@@ -609,7 +649,7 @@ export default function DriverPage() {
                         </button>
                       )}
                       {mine && (
-                        <button className="secondary" onClick={() => claim(s.rideId, "decline")}>
+                        <button className="secondary" onClick={() => decline(s.rideId)}>
                           Cancel ride
                         </button>
                       )}
@@ -623,7 +663,7 @@ export default function DriverPage() {
 
         <div>
           <h2>Map</h2>
-          <Map shuttles={shuttles} nomans={nomans} stops={queued} className="map map-driver" />
+          <Map shuttles={shuttles} nomans={nomans} bounds={state?.bounds} stops={queued} className="map map-driver" />
         </div>
       </div>
     </main>

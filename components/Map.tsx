@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import type { LatLng } from "@/lib/types";
+import type { BBox, LatLng } from "@/lib/types";
 
 type MapStop = {
   id: string;
@@ -31,6 +31,10 @@ type Props = {
   me?: LatLng | null;
   stops?: MapStop[];
   className?: string;
+  // Service-area box. When provided the map is fitted to Oak Bluffs and panning
+  // is walled in to it (can't scroll off to the rest of the island), and you
+  // can't zoom out past the box.
+  bounds?: BBox | null;
   // When provided, the "You" marker becomes draggable and this fires with the
   // new coordinate on drag-end — lets a passenger nudge a fuzzy GPS pin to
   // their real pickup spot before pinging.
@@ -56,6 +60,7 @@ export default function Map({
   stops = [],
   className,
   onMeDrag,
+  bounds,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
@@ -64,6 +69,28 @@ export default function Map({
   const iconsRef = useRef<Record<string, any>>({});
   // Breadcrumb trails keyed by shuttle id so two vans keep separate trails.
   const trailsRef = useRef<Record<string, LatLng[]>>({});
+  // Latest service-area box, read by applyBoundsLock without re-running init.
+  const boundsRef = useRef<BBox | null | undefined>(bounds);
+  boundsRef.current = bounds;
+  const boundsFitRef = useRef(false);
+
+  // Wall the map into Oak Bluffs: fit to the box once, lock panning to it, and
+  // forbid zooming out past it. Safe to call repeatedly — only the first call
+  // re-frames the view so a settings poll doesn't yank it around.
+  function applyBoundsLock() {
+    const map = mapRef.current;
+    const L = leafletRef.current;
+    const b = boundsRef.current;
+    if (!map || !L || !b) return;
+    const llb = L.latLngBounds([b.south, b.west], [b.north, b.east]);
+    map.options.maxBoundsViscosity = 1.0; // hard wall, no rubber-banding
+    map.setMaxBounds(llb.pad(0.12));
+    if (!boundsFitRef.current) {
+      map.fitBounds(llb);
+      map.setMinZoom(map.getZoom()); // can't zoom out past the service area
+      boundsFitRef.current = true;
+    }
+  }
 
   // One-time map initialization. Leaflet touches `window` so dynamic-import in effect.
   useEffect(() => {
@@ -146,6 +173,7 @@ export default function Map({
         }
       }
       mapRef.current = map;
+      applyBoundsLock();
       redraw();
     })();
     return () => {
@@ -184,6 +212,13 @@ export default function Map({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shuttleSig]);
+
+  // Apply the Oak Bluffs lock once the box arrives (it loads async from
+  // /api/state, often after the map has already mounted).
+  useEffect(() => {
+    applyBoundsLock();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bounds?.south, bounds?.north, bounds?.east, bounds?.west]);
 
   // Redraw on any prop change.
   useEffect(() => {

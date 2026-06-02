@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
-import type { LatLng } from "@/lib/types";
+import type { BBox, LatLng } from "@/lib/types";
 import PlacesAutocomplete from "@/components/PlacesAutocomplete";
 
 const Map = dynamic(() => import("@/components/Map"), { ssr: false });
@@ -22,6 +22,7 @@ type StateResponse = {
   capacity: number;
   stops: { id: string; kind: "pickup" | "dropoff"; position: LatLng; status: string }[];
   nomans: LatLng;
+  bounds: BBox;
   online: boolean;
   yours: {
     etaMinutes: number | null;
@@ -369,6 +370,7 @@ export default function PassengerPage() {
         <Map
           shuttles={shuttles}
           nomans={nomans}
+          bounds={state?.bounds}
           me={me}
           stops={state?.stops ?? []}
           // Let the rider correct a fuzzy GPS pin by dragging — but only

@@ -269,6 +269,18 @@ button.ok:hover:not(:disabled) { background: #c89a44; }
   flex-direction: column;
 }
 .stop.claimed-other { opacity: 0.6; border-style: dashed; }
+/* A just-arrived, unclaimed ping — accent border + soft pulse so it's the
+   obvious "newest" card at the top of the queue. */
+.stop.fresh {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent), 0 0 14px rgba(224, 151, 96, 0.35);
+  animation: fresh-pulse 1.6s ease-in-out infinite;
+}
+@keyframes fresh-pulse {
+  0%, 100% { box-shadow: 0 0 0 1px var(--accent), 0 0 6px rgba(224, 151, 96, 0.25); }
+  50% { box-shadow: 0 0 0 1px var(--accent), 0 0 16px rgba(224, 151, 96, 0.5); }
+}
+.tag.new-ping { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 700; }
 
 /* Permanent van name labels on the map — dark-themed to match the basemap. */
 .leaflet-tooltip.van-label {
