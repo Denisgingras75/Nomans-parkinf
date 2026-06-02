@@ -125,6 +125,9 @@ export async function POST(req: NextRequest) {
       body: `${where} — ${name} (party of ${partySize})${note ? ` · "${note.slice(0, 80)}"` : ""}`,
       url: "/driver",
       navUrl,
+      // Per-ride tag so a second pickup doesn't overwrite the first on the
+      // lock screen (default shared tag + renotify was coalescing them).
+      tag: `ping-${rideId}`,
     });
   }
 
