@@ -75,14 +75,24 @@ export async function GET(req: NextRequest) {
         status: string;
         driverName: string | null;
         driverPhone: string | null;
+        reassigning: boolean;
       }
     | null = null;
   if (stopId) {
     const me = state.stops.find((s) => s.id === stopId);
     if (me) {
+      // Only genuinely-waiting (unclaimed) pickups count toward the position —
+      // a pickup a driver already accepted isn't "ahead in line" anymore.
       const queuedAhead = activeStops.filter(
-        (s) => s.kind === "pickup" && s.createdAt < me.createdAt,
+        (s) => s.kind === "pickup" && !s.assignedDriverId && s.createdAt < me.createdAt,
       ).length;
+      // A ride that's been passed by a driver and is now waiting again (no
+      // current driver, but has a decline on record) — so the passenger card
+      // can say "finding you another driver" instead of silently reverting.
+      const reassigning =
+        !me.assignedDriverId &&
+        (me.declines?.length ?? 0) > 0 &&
+        (me.status === "queued" || me.status === "accepted" || me.status === "enroute");
       // Prefer the assigned driver's own van (when they're broadcasting their
       // phone GPS) for ETA; otherwise fall back to the nearest live van.
       const assignedVan = me.assignedDriverId
@@ -109,6 +119,7 @@ export async function GET(req: NextRequest) {
         status: me.status,
         driverName: me.assignedDriverName ?? null,
         driverPhone,
+        reassigning,
       };
     }
   }

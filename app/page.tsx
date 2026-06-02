@@ -30,6 +30,7 @@ type StateResponse = {
     status: string;
     driverName: string | null;
     driverPhone: string | null;
+    reassigning: boolean;
   } | null;
 };
 
@@ -227,16 +228,20 @@ export default function PassengerPage() {
               ? "On board"
               : yours.driverName
               ? `${yours.driverName} is on the way`
+              : yours.reassigning
+              ? "Finding you another driver…"
               : "Combi inbound"}
           </div>
           <div className="big">
-            {yours.etaMinutes != null ? `${yours.etaMinutes} min` : "—"}
+            {yours.reassigning || yours.etaMinutes == null ? "—" : `${yours.etaMinutes} min`}
           </div>
           <div style={{ marginTop: 6, fontSize: 13 }}>
             {yours.status === "picked-up"
               ? "Sit tight — heading to your dropoff."
               : yours.driverName
               ? "Your driver has your pickup — hang tight."
+              : yours.reassigning
+              ? "Hang tight — we're matching you with the next available combi."
               : `You're #${yours.position} in the queue.`}
           </div>
           {yours.driverName && (
