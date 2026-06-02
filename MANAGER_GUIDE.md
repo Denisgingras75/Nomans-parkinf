@@ -138,3 +138,37 @@ Changes save instantly and take effect everywhere — no redeploy.
 
 *Questions or changes you can't make here (new manager codes, billing, the
 Twilio/GPS setup) go to the owner.*
+
+---
+
+# Open / Close Checklist
+
+*Print this page. Tap through it at the start and end of every shift.*
+
+### ▶ OPENING (start of service)
+
+- [ ] Open **nomansdrive.com/admin** and log in with your manager code.
+- [ ] **Service status → Go online.**
+- [ ] At least one driver shows **on shift** (Drivers section).
+- [ ] **SMS alerts** are **on** (if you text drivers on each request).
+- [ ] Tap **Send test SMS** — confirm drivers get it.
+- [ ] Have each driver tap **Unlock** on their screen so the chime works.
+- [ ] **Live GPS (Bouncie)** shows the van reporting in (or driver is broadcasting phone GPS).
+
+### ■ CLOSING (end of night)
+
+- [ ] All rides in the queue are **Finished** or **Cancelled** (queue is empty).
+- [ ] **Service status → Take offline.**
+- [ ] Drivers flip themselves **off shift** (or you do it in Drivers).
+- [ ] Glance at **Today's rides** for the night's count.
+
+### ⚠ IF SOMETHING'S OFF
+
+- **Guests can't request** → check **online** + they're inside the **service area**.
+- **Driver gets no requests** → check they're **on shift** and **logged in**.
+- **No texts** → **SMS alerts on** + driver **on shift** + has a **phone number**.
+- **No chime** → driver taps **Unlock** once; test with **Driver chime test**.
+- **Van missing from map** → check **Live GPS**, or driver turns on **Broadcast my phone's GPS**.
+
+*Anything you can't fix here → call the owner.*
+
