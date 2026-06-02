@@ -3,15 +3,17 @@ import type { BBox, LatLng } from "./types";
 // Defaults used to seed Settings on first install. After that, the
 // admin can edit these from /admin and the values move into KV.
 export const DEFAULT_NOMANS: LatLng = { lat: 41.4541, lng: -70.5605 };
-// Service area = the town of Oak Bluffs: East Chop Light (north) down past
-// Inkwell Beach + Joseph Sylvia State Beach to Jaws Bridge (the Oak Bluffs ⇄
-// Edgartown line, ~41.415), and west across Farm Neck to Lagoon Pond. The
-// owner can fine-tune this in /admin → Service area.
+// Service area = the town of Oak Bluffs: East Chop Light (north, ~41.472) down
+// past Inkwell Beach + Joseph Sylvia State Beach to Jaws Bridge (the Oak Bluffs
+// ⇄ Edgartown line, ~41.413), east to the Nantucket Sound shoreline / State
+// Beach barrier, and west across Farm Neck to Lagoon Pond. Corners carry a
+// small buffer so an edge pickup isn't clipped. The owner can fine-tune this in
+// /admin → Service area (which is the live source of truth once saved to KV).
 export const DEFAULT_BOUNDS: BBox = {
-  south: 41.415,
-  north: 41.474,
+  south: 41.410,
+  north: 41.475,
   west: -70.586,
-  east: -70.540,
+  east: -70.532,
 };
 
 export function inBounds(p: LatLng, b: BBox): boolean {
