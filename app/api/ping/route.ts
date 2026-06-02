@@ -38,6 +38,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "name required" }, { status: 400 });
   }
 
+  if (!phone) {
+    return NextResponse.json(
+      { error: "a phone number is required so the driver can reach you" },
+      { status: 400 },
+    );
+  }
+
   if (!inBounds({ lat, lng }, settings.bounds)) {
     return NextResponse.json(
       { error: "outside the Oak Bluffs service area — only Oak Bluffs pickups and dropoffs are served" },

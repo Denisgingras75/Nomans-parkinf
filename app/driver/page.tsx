@@ -286,18 +286,16 @@ export default function DriverPage() {
     return true;
   };
 
-  // Accept a ride and, on success, hand off to the phone's maps app with
-  // turn-by-turn to the pickup. The blank tab is opened synchronously inside
-  // the tap so iOS Safari doesn't treat the later redirect as a blocked
-  // non-gesture popup; we point it at the directions URL once the claim
-  // confirms, or close it if another driver beat us to the ride (409).
+  // Accept a ride and hand off to the phone's maps app with turn-by-turn to
+  // the pickup. We open the directions URL *synchronously* inside the tap —
+  // the old "open blank tab, redirect after the claim resolves" trick was
+  // getting popup-blocked on mobile (window.open returned null), so the map
+  // never opened even though the claim itself succeeded. A direct
+  // user-gesture navigation to the real URL isn't blocked. The claim runs in
+  // parallel; if it fails the card surfaces the error and stays put.
   const acceptAndNavigate = (rideId: string | undefined, navUrl: string) => {
-    const navWin = typeof window !== "undefined" ? window.open("", "_blank") : null;
-    claim(rideId, "accept").then((ok) => {
-      if (!navWin) return;
-      if (ok) navWin.location.href = navUrl;
-      else navWin.close();
-    });
+    if (typeof window !== "undefined") window.open(navUrl, "_blank", "noopener");
+    claim(rideId, "accept");
   };
 
   // ----- Driver-phone GPS broadcast -----
@@ -545,7 +543,9 @@ export default function DriverPage() {
                   <>
                     {s.phone && mine && (
                       <div className="stop-actions">
-                        <a className="contact-link" href={`tel:${s.phone}`}>📞 Call {s.phone}</a>
+                        <a className="contact-link call-link" href={`tel:${s.phone}`}>
+                          📞 Call {s.name ?? "passenger"}
+                        </a>
                         <a className="contact-link" href={`sms:${s.phone}`}>💬 Text</a>
                       </div>
                     )}

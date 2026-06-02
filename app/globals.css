@@ -303,6 +303,14 @@ button.ok:hover:not(:disabled) { background: #c89a44; }
 }
 .contact-link { color: var(--gilt); border-color: rgba(230, 182, 87, 0.32); }
 .contact-link:hover { background: rgba(230, 182, 87, 0.08); }
+/* Prominent one-tap call for a claimed pickup — filled so it's the obvious action. */
+.call-link {
+  color: var(--accent-text);
+  background: var(--accent);
+  border-color: var(--accent);
+  font-weight: 700;
+}
+.call-link:hover { background: var(--accent-deep); border-color: var(--accent-deep); }
 .nav-link { color: var(--chart); border-color: rgba(106, 138, 160, 0.32); }
 .nav-link:hover { background: rgba(106, 138, 160, 0.08); }
 

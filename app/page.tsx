@@ -109,6 +109,10 @@ export default function PassengerPage() {
       setSubmitError("Tell us your name so the driver can find you.");
       return;
     }
+    if (phone.replace(/\D/g, "").length < 10) {
+      setSubmitError("Add your phone number so the driver can reach you.");
+      return;
+    }
     if (!me) {
       setSubmitError("Share your location first.");
       return;
@@ -245,12 +249,13 @@ export default function PassengerPage() {
 
           <div className="row" style={{ marginTop: 12 }}>
             <div>
-              <label htmlFor="phone">Phone (optional)</label>
+              <label htmlFor="phone">Phone</label>
               <input
                 id="phone"
                 type="tel"
                 inputMode="tel"
                 autoComplete="tel"
+                required
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
                 placeholder="508-555-1234"
