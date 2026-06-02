@@ -7,6 +7,15 @@ import { createChimeContext, playChime } from "@/lib/chime";
 
 const Map = dynamic(() => import("@/components/Map"), { ssr: false });
 
+// Preset, professional decline reasons. "done-for-day" also flips the driver
+// off shift server-side so they stop getting pinged.
+const DECLINE_REASONS: { key: string; label: string }[] = [
+  { key: "too-far", label: "Too far away" },
+  { key: "too-busy", label: "Too busy" },
+  { key: "busy-area", label: "Busy area" },
+  { key: "done-for-day", label: "Done for the day" },
+];
+
 type Stop = {
   id: string;
   rideId?: string;
@@ -53,6 +62,8 @@ export default function DriverPage() {
   // Rides the driver just declined/finished — hidden from the queue immediately
   // so the card clears on tap instead of lingering until the next 4s poll.
   const [hiddenRides, setHiddenRides] = useState<Set<string>>(() => new Set());
+  // rideId whose decline-reason picker is currently open (null = none).
+  const [declineFor, setDeclineFor] = useState<string | null>(null);
   const [pushStatus, setPushStatus] = useState<
     "unknown" | "unsupported" | "denied" | "off" | "on" | "working"
   >("unknown");
@@ -309,11 +320,22 @@ export default function DriverPage() {
     setHiddenRides((prev) => new Set(prev).add(rideId));
   };
 
-  // Decline = cancel the ride outright (notifies the passenger) and clear it
-  // from the queue on the spot.
-  const decline = async (rideId: string | undefined) => {
-    const ok = await claim(rideId, "decline");
-    if (ok) hideRide(rideId);
+  // Decline = pass the ride to the next driver, with a reason. It releases any
+  // claim, drops out of this driver's queue, and re-pings the other drivers.
+  const decline = async (rideId: string | undefined, reason: string) => {
+    setDeclineFor(null);
+    if (!rideId) return;
+    setError(null);
+    const res = await fetch("/api/stops", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "decline", rideId, reason, passcode }),
+    });
+    if (res.ok) hideRide(rideId);
+    else {
+      const data = await res.json().catch(() => ({}));
+      setError(data.error ?? "Action failed");
+    }
   };
 
   // "Finished" — complete the whole ride in one tap. Both legs go terminal and
@@ -621,7 +643,7 @@ export default function DriverPage() {
                           <button className="ok" onClick={() => acceptAndNavigate(s.rideId, navUrl)}>
                             ✅ Accept &amp; navigate
                           </button>
-                          <button className="secondary" onClick={() => decline(s.rideId)}>
+                          <button className="secondary" onClick={() => setDeclineFor(s.rideId ?? null)}>
                             Decline
                           </button>
                         </>
@@ -647,11 +669,32 @@ export default function DriverPage() {
                         </button>
                       )}
                       {mine && (
-                        <button className="secondary" onClick={() => decline(s.rideId)}>
-                          Cancel ride
+                        <button className="secondary" onClick={() => setDeclineFor(s.rideId ?? null)}>
+                          Pass to another driver
                         </button>
                       )}
                     </div>
+
+                    {/* Decline-reason picker: passes the ride to the next driver. */}
+                    {declineFor === s.rideId && (
+                      <div className="decline-reasons">
+                        <div className="note">Why are you passing this ride?</div>
+                        <div className="stop-actions">
+                          {DECLINE_REASONS.map((r) => (
+                            <button
+                              key={r.key}
+                              className="secondary"
+                              onClick={() => decline(s.rideId, r.key)}
+                            >
+                              {r.label}
+                            </button>
+                          ))}
+                          <button className="ghost" onClick={() => setDeclineFor(null)}>
+                            Never mind
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </>
                 )}
               </div>

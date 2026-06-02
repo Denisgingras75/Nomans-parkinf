@@ -39,6 +39,15 @@ type BouncieStatus = {
     | null;
 };
 
+// Readable labels for the driver decline reasons logged on a stop.
+const DECLINE_LABELS: Record<string, string> = {
+  "too-far": "too far away",
+  "too-busy": "too busy",
+  "busy-area": "busy area",
+  "done-for-day": "done for the day",
+  other: "passed",
+};
+
 export default function AdminPage() {
   const [passcode, setPasscode] = useState("");
   const [authed, setAuthed] = useState(false);
@@ -681,6 +690,13 @@ export default function AdminPage() {
               {new Date(s.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
               {s.note ? ` · ${s.note}` : ""}
             </div>
+            {s.declines && s.declines.length > 0 && (
+              <div className="note" style={{ marginTop: 4, color: "var(--danger)" }}>
+                {s.declines
+                  .map((d) => `↩ ${d.by}: ${DECLINE_LABELS[d.reason] ?? d.reason}`)
+                  .join("  ·  ")}
+              </div>
+            )}
           </div>
         ))}
       </div>

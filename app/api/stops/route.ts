@@ -1,14 +1,35 @@
 import { NextRequest, NextResponse } from "next/server";
-import { cancelRideByDriver, claimRide, completeRide, setStopStatus } from "@/lib/store";
+import {
+  cancelRide,
+  claimRide,
+  completeRide,
+  declineRide,
+  getDrivers,
+  getSettings,
+  setStopStatus,
+  updateDriver,
+} from "@/lib/store";
 import { findDriver } from "@/lib/auth";
+import { sendPushToDrivers } from "@/lib/push";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+// Preset, professional decline reasons the driver picks from. "done-for-day"
+// also flips the driver off shift so they stop getting pinged.
+const DECLINE_REASONS = new Set([
+  "too-far",
+  "too-busy",
+  "busy-area",
+  "done-for-day",
+  "other",
+]);
+
 // Driver-only. Two modes:
-//   - Ride action:    { action: "accept"|"decline"|"finish", rideId, passcode }
+//   - Ride action:    { action: "accept"|"decline"|"finish", rideId, passcode, reason? }
 //       accept  → claim the ride (both legs)
-//       decline → cancel the ride outright + flip the passenger's feed to "cancelled"
+//       decline → pass the ride to the next driver (release + dismiss for me),
+//                 logging `reason`; re-pushes to the other on-shift drivers
 //       finish  → complete the ride (both legs dropped-off), clearing the queue
 //   - Advance a stop: { id, status: "enroute"|"picked-up"|"dropped-off"|"cancelled", passcode }
 export async function POST(req: NextRequest) {
@@ -47,8 +68,43 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true });
     }
 
-    const res = await cancelRideByDriver(rideId);
+    // decline: pass to the next driver.
+    const reason =
+      typeof body.reason === "string" && DECLINE_REASONS.has(body.reason) ? body.reason : "other";
+    const res = await declineRide(rideId, driver, reason);
     if (!res.ok) return NextResponse.json({ error: "ride not found" }, { status: 404 });
+
+    // "Done for the day" — take the driver off shift so they stop getting pings.
+    if (reason === "done-for-day") {
+      await updateDriver(driver.id, { onShift: false }).catch(() => {});
+    }
+
+    // If no one's holding the ride now, offer it to the drivers who haven't
+    // passed it yet. If there's nobody left to offer it to, cancel it so the
+    // passenger gets told instead of waiting on a ride no one will take.
+    if (res.nowUnclaimed && res.pickup) {
+      const p = res.pickup;
+      const passed = new Set(p.dismissedBy ?? []);
+      const eligible = (await getDrivers()).filter((d) => d.onShift && !passed.has(d.id));
+      if (eligible.length === 0) {
+        await cancelRide(p.id);
+      } else {
+        const settings = await getSettings();
+        if (settings.alertsEnabled) {
+          const navUrl = `https://www.google.com/maps/dir/?api=1&destination=${p.position.lat},${p.position.lng}`;
+          await sendPushToDrivers(
+            eligible.map((d) => d.id),
+            {
+              title: "🚐 Pickup needs a driver",
+              body: `${p.name} (party of ${p.partySize}) — another driver passed.`,
+              url: "/driver",
+              navUrl,
+              tag: `reoffer-${rideId}`,
+            },
+          );
+        }
+      }
+    }
     return NextResponse.json({ ok: true });
   }
 

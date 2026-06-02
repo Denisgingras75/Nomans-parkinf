@@ -67,9 +67,13 @@ export type Stop = {
   // Other drivers see it locked; the passenger sees who's coming.
   assignedDriverId?: string;
   assignedDriverName?: string;
-  // Driver ids that dismissed this (still-unclaimed) ride from their own
-  // queue. Server-filtered per driver; the ride stays live for everyone else.
+  // Driver ids that declined/dismissed this ride from their own queue, so it
+  // moves on to the next driver and they don't get re-offered it. Server-
+  // filtered per driver; the ride stays live for everyone else.
   dismissedBy?: string[];
+  // Audit trail of driver declines (with a reason) so the owner can see why a
+  // ride bounced between drivers. Newest last; capped.
+  declines?: { by: string; reason: string; at: number }[];
   createdAt: number;
   updatedAt: number;
 };
