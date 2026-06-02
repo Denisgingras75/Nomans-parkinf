@@ -48,7 +48,7 @@ type StateResponse = {
   stops: Stop[];
   nomans: LatLng;
   bounds?: BBox;
-  me: { id: string; name: string; onShift: boolean; phone: string | null; legacy: boolean } | null;
+  me: { id: string; name: string; onShift: boolean; phone: string | null; legacy: boolean; van: string | null } | null;
 };
 
 export default function DriverPage() {
@@ -72,6 +72,12 @@ export default function DriverPage() {
   // This device's location (best-effort) so each unclaimed pickup can show how
   // far away it is — lets the driver judge accept/decline at a glance.
   const [myPos, setMyPos] = useState<LatLng | null>(null);
+  // Which van this phone is driving (van1/van2). Picked after the passcode at
+  // sign-in; it's the operating identity sent to the server so two phones on
+  // the shared code stay distinct for dispatch and ownership.
+  const [van, setVan] = useState<string | null>(null);
+  const [loginError, setLoginError] = useState<string | null>(null);
+  const [validating, setValidating] = useState(false);
 
   const audioCtxRef = useRef<AudioContext | null>(null);
   const knownPickupIdsRef = useRef<Set<string>>(new Set());
@@ -98,15 +104,20 @@ export default function DriverPage() {
       setPasscode(saved);
       setAuthed(true);
     }
+    const savedVan = localStorage.getItem("nomans.van");
+    if (savedVan) setVan(savedVan);
   }, []);
 
   // Poll state every 4s while authenticated.
   useEffect(() => {
-    if (!authed) return;
+    if (!authed || !van) return;
     let alive = true;
     const tick = async () => {
       try {
-        const res = await fetch(`/api/state?driver=${encodeURIComponent(passcode)}`, { cache: "no-store" });
+        const res = await fetch(
+          `/api/state?driver=${encodeURIComponent(passcode)}&van=${encodeURIComponent(van)}`,
+          { cache: "no-store" },
+        );
         if (!res.ok) return;
         const data = (await res.json()) as StateResponse;
         if (alive) setState(data);
@@ -120,7 +131,7 @@ export default function DriverPage() {
       alive = false;
       clearInterval(t);
     };
-  }, [authed, passcode]);
+  }, [authed, passcode, van]);
 
   // Detect new pickup pings → chime + flash. The first state load
   // doesn't trigger an alert — queue items present on unlock are
@@ -147,10 +158,49 @@ export default function DriverPage() {
     setTimeout(() => setFlash(false), 1200);
   };
 
-  const unlock = () => {
-    audioCtxRef.current = createChimeContext();
-    localStorage.setItem("nomans.driverPass", passcode);
-    setAuthed(true);
+  const unlock = async () => {
+    // Prime the chime synchronously inside the tap — iOS Safari requires the
+    // AudioContext be created during the gesture, before any await.
+    if (!audioCtxRef.current) audioCtxRef.current = createChimeContext();
+    setLoginError(null);
+    setValidating(true);
+    try {
+      const res = await fetch(`/api/state?driver=${encodeURIComponent(passcode)}`, {
+        cache: "no-store",
+      });
+      const data = res.ok ? await res.json().catch(() => null) : null;
+      // The server only returns `me` for a recognized code — reject anything
+      // else instead of silently "logging in" and then breaking every action.
+      if (!data || !data.me) {
+        setLoginError("That code wasn't recognized. Check it with the owner.");
+        return;
+      }
+      localStorage.setItem("nomans.driverPass", passcode);
+      setAuthed(true);
+    } catch {
+      setLoginError("Couldn't reach the server — try again.");
+    } finally {
+      setValidating(false);
+    }
+  };
+
+  const pickVan = (v: string) => {
+    localStorage.setItem("nomans.van", v);
+    setVan(v);
+  };
+
+  const signOut = () => {
+    localStorage.removeItem("nomans.driverPass");
+    localStorage.removeItem("nomans.van");
+    setAuthed(false);
+    setVan(null);
+    setPasscode("");
+  };
+
+  // Back to the van picker without re-entering the code.
+  const switchVan = () => {
+    localStorage.removeItem("nomans.van");
+    setVan(null);
   };
 
   const toggleShift = async () => {
@@ -254,7 +304,7 @@ export default function DriverPage() {
       const res = await fetch("/api/push/subscribe", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ passcode, subscription: sub.toJSON() }),
+        body: JSON.stringify({ passcode, van, subscription: sub.toJSON() }),
       });
       if (!res.ok) {
         const j = await res.json().catch(() => ({}));
@@ -293,7 +343,7 @@ export default function DriverPage() {
     const res = await fetch("/api/stops", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ id, status, passcode }),
+      body: JSON.stringify({ id, status, passcode, van }),
     });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
@@ -309,7 +359,7 @@ export default function DriverPage() {
     const res = await fetch("/api/stops", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ action, rideId, passcode }),
+      body: JSON.stringify({ action, rideId, passcode, van }),
     });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
@@ -345,7 +395,7 @@ export default function DriverPage() {
     const res = await fetch("/api/stops", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ action: "decline", rideId, reason, passcode }),
+      body: JSON.stringify({ action: "decline", rideId, reason, passcode, van }),
     });
     if (res.ok) hideRide(rideId);
     else {
@@ -362,7 +412,7 @@ export default function DriverPage() {
     const res = await fetch("/api/stops", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ action: "finish", rideId, passcode }),
+      body: JSON.stringify({ action: "finish", rideId, passcode, van }),
     });
     if (res.ok) {
       hideRide(rideId);
@@ -391,6 +441,7 @@ export default function DriverPage() {
               heading: pos.coords.heading,
               speed: pos.coords.speed,
               passcode,
+              van,
             }),
           });
         } catch {
@@ -430,20 +481,58 @@ export default function DriverPage() {
           <div className="brand-tag">Driver Dashboard</div>
         </header>
         <div className="card">
-          <label htmlFor="pass">Driver passcode</label>
+          <label htmlFor="pass">Driver code</label>
           <input
             id="pass"
             type="password"
             value={passcode}
             onChange={(e) => setPasscode(e.target.value)}
-            placeholder="Set in your Vercel env vars"
+            onKeyDown={(e) => {
+              if (e.key === "Enter") unlock();
+            }}
+            placeholder="Enter your driver code"
           />
-          <button style={{ marginTop: 12 }} onClick={unlock}>
-            Unlock
+          <button
+            style={{ marginTop: 12 }}
+            onClick={unlock}
+            disabled={validating || !passcode.trim()}
+          >
+            {validating ? "Checking…" : "Unlock"}
           </button>
+          {loginError && (
+            <div className="error" style={{ marginTop: 10 }}>
+              {loginError}
+            </div>
+          )}
           <p className="note" style={{ marginTop: 12 }}>
             Tapping Unlock also primes the chime sound (iOS Safari requires it).
           </p>
+        </div>
+      </main>
+    );
+  }
+
+  if (!van) {
+    return (
+      <main className="page">
+        <header className="brand">
+          <img src="/nomans-logo.png" alt="NoMans" className="brand-logo" />
+          <div className="brand-tag">Which van are you driving?</div>
+        </header>
+        <div className="card">
+          <p className="note" style={{ marginBottom: 14 }}>
+            Pick the van you're in. New pickups go to <strong>Van 1</strong> first;
+            <strong> Van 2</strong> picks up when Van 1 is on a ride.
+          </p>
+          <div className="stop-actions">
+            <button className="ok" onClick={() => pickVan("van1")}>
+              🚐 Van 1
+            </button>
+            <button onClick={() => pickVan("van2")}>🚐 Van 2</button>
+          </div>
+          <button className="ghost" style={{ marginTop: 16 }} onClick={signOut}>
+            ← sign out
+          </button>
         </div>
       </main>
     );
@@ -511,22 +600,27 @@ export default function DriverPage() {
         >
           <div style={{ flex: 1, minWidth: 160 }}>
             <div style={{ fontWeight: 700 }}>
-              {state.me.legacy
-                ? "● Shared driver code"
-                : state.me.onShift
-                ? "● On shift"
-                : "○ Off shift"}{" "}
-              · {state.me.name}
+              {van
+                ? `🚐 ${state.me.name}`
+                : state.me.legacy
+                ? `● Shared driver code · ${state.me.name}`
+                : `${state.me.onShift ? "● On shift" : "○ Off shift"} · ${state.me.name}`}
             </div>
             <div className="note">
-              {state.me.legacy
+              {van
+                ? "New pickups come to Van 1 first; Van 2 backs it up when Van 1 is on a ride. Enable phone alerts below so you get pinged."
+                : state.me.legacy
                 ? "You're on the shared driver code — fine for accepting and running rides. For per-driver push alerts and shift control, add a driver in /admin and log in with that NM- code."
                 : state.me.onShift
                 ? "On shift — you'll get push alerts on new pickups once you've enabled phone alerts below."
                 : "Off shift — no alerts until you flip back on."}
             </div>
           </div>
-          {!state.me.legacy && (
+          {van ? (
+            <button className="secondary" onClick={switchVan} style={{ width: "auto" }}>
+              Switch van
+            </button>
+          ) : !state.me.legacy ? (
             <button
               className={state.me.onShift ? "danger" : "ok"}
               onClick={toggleShift}
@@ -535,7 +629,7 @@ export default function DriverPage() {
             >
               {state.me.onShift ? "Go off shift" : "Go on shift"}
             </button>
-          )}
+          ) : null}
         </div>
       )}
 
