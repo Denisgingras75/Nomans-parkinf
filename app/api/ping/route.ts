@@ -12,6 +12,7 @@ import { inBounds } from "@/lib/geofence";
 import { isOnlineNow } from "@/lib/schedule";
 import { normalizePhone } from "@/lib/sms";
 import { sendPushToDrivers } from "@/lib/push";
+import { resolveDispatchTargets } from "@/lib/dispatch";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -122,32 +123,15 @@ export async function POST(req: NextRequest) {
     // maps straight to the right point.
     const pickupPos = direction === "to-nomans" ? { lat, lng } : settings.nomans;
     const navUrl = `https://www.google.com/maps/dir/?api=1&destination=${pickupPos.lat},${pickupPos.lng}`;
-    // Van-priority dispatch. A van is "in service" if it has a push
-    // subscription; "busy" if it holds an active ride. Alert Van 1 first; if
-    // Van 1 is busy, Van 2 (when in service). With no vans in service, fall
-    // back to any on-shift real driver (legacy single-pool behavior).
-    const subs = await getPushSubscriptions();
-    const liveState = await getState();
-    const inService = (id: string) => subs.some((s) => s.driverId === id);
-    const busy = (id: string) =>
-      liveState.stops.some(
-        (s) =>
-          s.assignedDriverId === id &&
-          (s.status === "accepted" || s.status === "enroute" || s.status === "picked-up"),
-      );
-    const van1Up = inService("van1");
-    const van2Up = inService("van2");
-    let targetIds: string[];
-    if (van1Up || van2Up) {
-      if (van1Up && !busy("van1")) targetIds = ["van1"];
-      else if (van2Up && !busy("van2")) targetIds = ["van2"];
-      // Both busy (or the only in-service van is busy): still alert whoever's
-      // on, so the ride isn't silently dropped — they take it when free.
-      else targetIds = ["van1", "van2"].filter((v) => (v === "van1" ? van1Up : van2Up));
-    } else {
-      const drivers = await getDrivers();
-      targetIds = drivers.filter((d) => d.onShift).map((d) => d.id);
-    }
+    // Van-priority dispatch (Van 1 → Van 2 → both → on-shift fallback). Shared
+    // with the decline re-offer in /api/stops so the two paths agree on who
+    // can take a ride.
+    const [subs, liveState, drivers] = await Promise.all([
+      getPushSubscriptions(),
+      getState(),
+      getDrivers(),
+    ]);
+    const targetIds = resolveDispatchTargets({ subs, stops: liveState.stops, drivers });
 
     // Phone push only — no SMS. The targeted driver(s) who tapped "Enable phone
     // alerts" on /driver get a notification (sound + vibrate) even when the

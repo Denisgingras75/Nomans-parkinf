@@ -5,12 +5,16 @@ import {
   completeRide,
   declineRide,
   getDrivers,
+  getPushSubscriptions,
   getSettings,
+  getState,
+  removePushSubscriptionsForDriver,
   setStopStatus,
   updateDriver,
 } from "@/lib/store";
-import { resolveOperator } from "@/lib/auth";
+import { normalizeVan, resolveOperator } from "@/lib/auth";
 import { sendPushToDrivers } from "@/lib/push";
+import { resolveDispatchTargets } from "@/lib/dispatch";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -38,6 +42,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "invalid payload" }, { status: 400 });
   }
 
+  const van = normalizeVan(body.van);
   const driver = await resolveOperator(body.passcode, body.van);
   if (!driver) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
@@ -85,43 +90,60 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // "Done for the day" — take the driver off shift so they stop getting
-    // pings. Surface a flag if it fails (KV hiccup / missing row) instead of
-    // swallowing it, so the driver isn't left thinking they're off shift when
-    // they're not. (No logger in this app — the flag rides back in the JSON.)
+    // "Done for the day" — stop pinging this operator. A van has no Driver
+    // row to flip off-shift, and dispatch keys off the push subscription, so
+    // the real off switch is dropping its subscription. A real driver flips
+    // their row off-shift; surface a flag if that fails (KV hiccup / missing
+    // row) instead of swallowing it. (No logger here — the flag rides back in
+    // the JSON.)
     let shiftUpdateFailed = false;
     if (reason === "done-for-day") {
-      try {
-        shiftUpdateFailed = (await updateDriver(driver.id, { onShift: false })) == null;
-      } catch {
-        shiftUpdateFailed = true;
+      if (van) {
+        try {
+          await removePushSubscriptionsForDriver(van);
+        } catch {
+          /* best-effort — re-offer below still routes around this van */
+        }
+      } else {
+        try {
+          shiftUpdateFailed = (await updateDriver(driver.id, { onShift: false })) == null;
+        } catch {
+          shiftUpdateFailed = true;
+        }
       }
     }
 
-    // If no one's holding the ride now, offer it to the drivers who haven't
-    // passed it yet. If there's nobody left to offer it to, cancel it so the
-    // passenger gets told instead of waiting on a ride no one will take.
+    // If no one's holding the ride now, offer it to the next operator who
+    // hasn't passed it yet — using the same van-priority logic as the initial
+    // dispatch, so Van 2 (or an on-shift driver) actually gets it. If there's
+    // genuinely nobody left, cancel it so the passenger gets told instead of
+    // waiting on a ride no one will take.
     if (res.nowUnclaimed && res.pickup) {
       const p = res.pickup;
       const passed = new Set(p.dismissedBy ?? []);
-      const eligible = (await getDrivers()).filter((d) => d.onShift && !passed.has(d.id));
-      if (eligible.length === 0) {
+      const [subs, liveState, drivers, settings] = await Promise.all([
+        getPushSubscriptions(),
+        getState(),
+        getDrivers(),
+        getSettings(),
+      ]);
+      const targets = resolveDispatchTargets({
+        subs,
+        stops: liveState.stops,
+        drivers,
+        exclude: passed,
+      });
+      if (targets.length === 0) {
         await cancelRide(p.id);
-      } else {
-        const settings = await getSettings();
-        if (settings.alertsEnabled) {
-          const navUrl = `https://www.google.com/maps/dir/?api=1&destination=${p.position.lat},${p.position.lng}`;
-          await sendPushToDrivers(
-            eligible.map((d) => d.id),
-            {
-              title: "🚐 Pickup needs a driver",
-              body: `${p.name} (party of ${p.partySize}) — another driver passed.`,
-              url: "/driver",
-              navUrl,
-              tag: `reoffer-${rideId}`,
-            },
-          );
-        }
+      } else if (settings.alertsEnabled) {
+        const navUrl = `https://www.google.com/maps/dir/?api=1&destination=${p.position.lat},${p.position.lng}`;
+        await sendPushToDrivers(targets, {
+          title: "🚐 Pickup needs a driver",
+          body: `${p.name} (party of ${p.partySize}) — another driver passed.`,
+          url: "/driver",
+          navUrl,
+          tag: `reoffer-${rideId}`,
+        });
       }
     }
     return NextResponse.json(shiftUpdateFailed ? { ok: true, shiftUpdateFailed } : { ok: true });

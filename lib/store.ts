@@ -231,9 +231,10 @@ export async function setStopStatus(
   const state = await readState();
   const stop = state.stops.find((s) => s.id === id);
   if (!stop) return null;
-  // Ownership guard: a driver may only advance a stop on a ride they hold.
-  // Skipped when driverId is omitted (internal/admin callers).
-  if (driverId && stop.assignedDriverId && stop.assignedDriverId !== driverId) return null;
+  // Ownership guard: a driver (driverId set) may only advance a stop on a ride
+  // they actually hold — never one that's still unclaimed or another driver's.
+  // Skipped when driverId is omitted (internal/admin/passenger-cancel callers).
+  if (driverId && stop.assignedDriverId !== driverId) return null;
   const prevStatus = stop.status;
   stop.status = status;
   stop.updatedAt = Date.now();
@@ -648,6 +649,18 @@ export async function upsertPushSubscription(
 export async function removePushSubscription(endpoint: string): Promise<void> {
   const subs = await getPushSubscriptions();
   const next = subs.filter((s) => s.subscription.endpoint !== endpoint);
+  if (useKV()) await kvSet(KV_PUSH_SUBS_KEY, next);
+  else memory.__nomansPushSubs = next;
+}
+
+// Drop every push subscription bound to an operator id. Used to take a van
+// out of rotation when its driver picks "Done for the day" — vans have no
+// Driver row to flip off-shift, and dispatch keys off the push subscription,
+// so removing it is the real "stop pinging this phone" switch.
+export async function removePushSubscriptionsForDriver(driverId: string): Promise<void> {
+  const subs = await getPushSubscriptions();
+  const next = subs.filter((s) => s.driverId !== driverId);
+  if (next.length === subs.length) return;
   if (useKV()) await kvSet(KV_PUSH_SUBS_KEY, next);
   else memory.__nomansPushSubs = next;
 }

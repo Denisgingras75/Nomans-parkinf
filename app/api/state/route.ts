@@ -109,8 +109,11 @@ export async function GET(req: NextRequest) {
           : null;
       // Surface the assigned driver's name + number so the passenger can see
       // who's coming and tap to call them right from the status card.
+      // Only real driver rows carry a callback number. A van identity
+      // (van1/van2) has no Driver row, so skip the lookup — the passenger card
+      // just shows the van name without a Call button.
       let driverPhone: string | null = null;
-      if (me.assignedDriverId) {
+      if (me.assignedDriverId && !normalizeVan(me.assignedDriverId)) {
         const drivers = await getDrivers();
         driverPhone = drivers.find((d) => d.id === me.assignedDriverId)?.phone ?? null;
       }

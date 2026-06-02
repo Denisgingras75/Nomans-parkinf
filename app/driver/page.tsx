@@ -807,7 +807,11 @@ export default function DriverPage() {
                       <div className="decline-reasons">
                         <div className="note">Why are you passing this ride?</div>
                         <div className="stop-actions">
-                          {DECLINE_REASONS.map((r) => (
+                          {DECLINE_REASONS.filter(
+                            // A van's "done for the day" is handled by turning
+                            // off its alerts / switching van, not a shift row.
+                            (r) => r.key !== "done-for-day" || !van,
+                          ).map((r) => (
                             <button
                               key={r.key}
                               className="secondary"
