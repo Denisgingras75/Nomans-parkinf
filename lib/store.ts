@@ -223,23 +223,45 @@ export async function addStop(
   return stop;
 }
 
-export async function setStopStatus(id: string, status: StopStatus): Promise<Stop | null> {
+export async function setStopStatus(
+  id: string,
+  status: StopStatus,
+  driverId?: string,
+): Promise<Stop | null> {
   const state = await readState();
   const stop = state.stops.find((s) => s.id === id);
   if (!stop) return null;
+  // Ownership guard: a driver may only advance a stop on a ride they hold.
+  // Skipped when driverId is omitted (internal/admin callers).
+  if (driverId && stop.assignedDriverId && stop.assignedDriverId !== driverId) return null;
+  const prevStatus = stop.status;
   stop.status = status;
   stop.updatedAt = Date.now();
   const alsoArchive: Stop[] = [];
-  if (status === "picked-up" && stop.kind === "pickup") {
+  // Seats fill only on the actual pickup, and only once (guard against a
+  // double "picked-up" re-marking re-adding the party).
+  if (status === "picked-up" && stop.kind === "pickup" && prevStatus !== "picked-up") {
     state.onboard = Math.min(state.capacity, state.onboard + stop.partySize);
   }
-  if (status === "dropped-off") {
-    state.onboard = Math.max(0, state.onboard - stop.partySize);
-    // Dropping off ends the ride. Flip any other still-active leg of the same
-    // ride (notably the passenger's pickup leg — the stopId their page polls)
-    // to dropped-off too, so the passenger sees the "arrived" state instead of
-    // being stuck on "on board". Seats were already released above, so don't
-    // touch onboard again for the sibling.
+  if (status === "dropped-off" || status === "cancelled") {
+    // Release seats only if this ride's passenger was actually onboard — i.e.
+    // its pickup leg was picked-up. Marking a dropoff/cancel without a prior
+    // pickup (no-show, skipped step, raw cancel) must NOT steal seats from
+    // other parties still in the van.
+    const wasOnboard =
+      stop.kind === "pickup"
+        ? prevStatus === "picked-up"
+        : !!(
+            stop.rideId &&
+            state.stops.some(
+              (s) => s.rideId === stop.rideId && s.kind === "pickup" && s.status === "picked-up",
+            )
+          );
+    if (wasOnboard) state.onboard = Math.max(0, state.onboard - stop.partySize);
+    // Ending the ride (dropoff or cancel) flips any other still-active leg of
+    // the same ride (notably the passenger's pickup leg — the stopId their page
+    // polls) to the same terminal state, so it doesn't orphan in the queue.
+    // Seats were already settled above, so don't touch onboard for siblings.
     if (stop.rideId) {
       for (const s of state.stops) {
         if (
@@ -248,7 +270,7 @@ export async function setStopStatus(id: string, status: StopStatus): Promise<Sto
           s.status !== "cancelled" &&
           s.status !== "dropped-off"
         ) {
-          s.status = "dropped-off";
+          s.status = status;
           s.updatedAt = stop.updatedAt;
           alsoArchive.push(s);
         }
@@ -353,6 +375,11 @@ export async function declineRide(
     (s) => s.rideId === rideId && s.status !== "cancelled" && s.status !== "dropped-off",
   );
   if (legs.length === 0) return { ok: false, nowUnclaimed: false, pickup: null };
+  // Can't pass a ride once the passenger is in the van — they're already
+  // aboard, so it can't bounce to another driver.
+  if (legs.some((s) => s.status === "picked-up")) {
+    return { ok: false, nowUnclaimed: false, pickup: null };
+  }
 
   const now = Date.now();
   for (const s of legs) {
@@ -376,19 +403,27 @@ export async function declineRide(
 // leaves the driver's queue and the passenger's feed reads "dropped-off". If
 // the passenger was already onboard (pickup was picked-up), we release their
 // seats back to the fleet pool. Archived so it shows in "Today's rides".
-export async function completeRide(rideId: string): Promise<{ ok: boolean }> {
+export async function completeRide(
+  rideId: string,
+  driverId?: string,
+): Promise<{ ok: boolean; reason?: "not-found" | "forbidden" }> {
   const state = await readState();
   const legs = state.stops.filter(
     (s) => s.rideId === rideId && s.status !== "cancelled" && s.status !== "dropped-off",
   );
-  if (legs.length === 0) return { ok: false };
+  if (legs.length === 0) return { ok: false, reason: "not-found" };
+  // Ownership guard: only the driver holding the ride can complete it.
+  if (driverId && legs.some((s) => s.assignedDriverId && s.assignedDriverId !== driverId)) {
+    return { ok: false, reason: "forbidden" };
+  }
   const now = Date.now();
-  const wasOnboard = legs.some((s) => s.kind === "pickup" && s.status === "picked-up");
+  const pickup = legs.find((s) => s.kind === "pickup");
+  const wasOnboard = pickup?.status === "picked-up";
   for (const s of legs) {
     s.status = "dropped-off";
     s.updatedAt = now;
   }
-  if (wasOnboard) state.onboard = Math.max(0, state.onboard - (legs[0]?.partySize ?? 0));
+  if (wasOnboard) state.onboard = Math.max(0, state.onboard - (pickup?.partySize ?? 0));
   await writeState(state);
   for (const s of legs) await appendToRideArchive(s);
   return { ok: true };
@@ -398,7 +433,11 @@ export async function completeRide(rideId: string): Promise<{ ok: boolean }> {
 export async function remainingCapacity(): Promise<number> {
   const state = await readState();
   const reservedPickups = state.stops
-    .filter((s) => (s.status === "queued" || s.status === "enroute") && s.kind === "pickup")
+    .filter(
+      (s) =>
+        (s.status === "queued" || s.status === "accepted" || s.status === "enroute") &&
+        s.kind === "pickup",
+    )
     .reduce((sum, s) => sum + s.partySize, 0);
   // TODO(two-shuttle): this is a fleet-wide pool, not per-van. Fine at current
   // volume; revisit if overbooking one van becomes a real problem.
