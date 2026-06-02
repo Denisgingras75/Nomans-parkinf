@@ -56,6 +56,34 @@ export async function findFullDriver(
   return null;
 }
 
+// A "van" operating identity. On the shared DRIVER_PASSCODE two phones are
+// otherwise indistinguishable to the server; selecting a van at sign-in makes
+// them distinct (Van 1 vs Van 2) for dispatch priority, ride ownership, and
+// map position.
+export function normalizeVan(van: string | null | undefined): "van1" | "van2" | null {
+  if (van === "1" || van === "van1") return "van1";
+  if (van === "2" || van === "van2") return "van2";
+  return null;
+}
+
+export function vanName(id: string): string {
+  return id === "van1" ? "Van 1" : id === "van2" ? "Van 2" : id;
+}
+
+// Resolve the operating identity for a driver request. The passcode is the
+// gate (shared DRIVER_PASSCODE or a real per-driver NM code). When a van is
+// selected, the van IS the identity; otherwise it's the resolved driver. Null
+// means the passcode itself didn't validate.
+export async function resolveOperator(
+  passcode: string | null | undefined,
+  van: string | null | undefined,
+): Promise<{ id: string; name: string } | null> {
+  const base = await findDriver(passcode);
+  if (!base) return null;
+  const v = normalizeVan(van);
+  return v ? { id: v, name: vanName(v) } : base;
+}
+
 // Length-leaking but content-safe equality. Good enough for short
 // shared-secret comparison; full timing safety would require Buffer +
 // crypto.timingSafeEqual which is overkill at this scale.

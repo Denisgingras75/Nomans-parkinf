@@ -9,7 +9,7 @@ import {
   setStopStatus,
   updateDriver,
 } from "@/lib/store";
-import { findDriver } from "@/lib/auth";
+import { resolveOperator } from "@/lib/auth";
 import { sendPushToDrivers } from "@/lib/push";
 
 export const runtime = "nodejs";
@@ -38,7 +38,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "invalid payload" }, { status: 400 });
   }
 
-  const driver = await findDriver(body.passcode);
+  const driver = await resolveOperator(body.passcode, body.van);
   if (!driver) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }

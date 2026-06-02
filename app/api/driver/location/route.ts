@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { upsertShuttle } from "@/lib/store";
-import { findDriver } from "@/lib/auth";
+import { resolveOperator } from "@/lib/auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,7 +17,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "invalid payload" }, { status: 400 });
   }
 
-  const driver = await findDriver(body.passcode);
+  const driver = await resolveOperator(body.passcode, body.van);
   if (!driver) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }

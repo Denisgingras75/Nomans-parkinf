@@ -1,5 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { addStop, cancelRide, getDrivers, getSettings, remainingCapacity } from "@/lib/store";
+import {
+  addStop,
+  cancelRide,
+  getDrivers,
+  getPushSubscriptions,
+  getSettings,
+  getState,
+  remainingCapacity,
+} from "@/lib/store";
 import { inBounds } from "@/lib/geofence";
 import { isOnlineNow } from "@/lib/schedule";
 import { normalizePhone } from "@/lib/sms";
@@ -114,13 +122,37 @@ export async function POST(req: NextRequest) {
     // maps straight to the right point.
     const pickupPos = direction === "to-nomans" ? { lat, lng } : settings.nomans;
     const navUrl = `https://www.google.com/maps/dir/?api=1&destination=${pickupPos.lat},${pickupPos.lng}`;
-    const drivers = await getDrivers();
-    const onShiftIds = drivers.filter((d) => d.onShift).map((d) => d.id);
+    // Van-priority dispatch. A van is "in service" if it has a push
+    // subscription; "busy" if it holds an active ride. Alert Van 1 first; if
+    // Van 1 is busy, Van 2 (when in service). With no vans in service, fall
+    // back to any on-shift real driver (legacy single-pool behavior).
+    const subs = await getPushSubscriptions();
+    const liveState = await getState();
+    const inService = (id: string) => subs.some((s) => s.driverId === id);
+    const busy = (id: string) =>
+      liveState.stops.some(
+        (s) =>
+          s.assignedDriverId === id &&
+          (s.status === "accepted" || s.status === "enroute" || s.status === "picked-up"),
+      );
+    const van1Up = inService("van1");
+    const van2Up = inService("van2");
+    let targetIds: string[];
+    if (van1Up || van2Up) {
+      if (van1Up && !busy("van1")) targetIds = ["van1"];
+      else if (van2Up && !busy("van2")) targetIds = ["van2"];
+      // Both busy (or the only in-service van is busy): still alert whoever's
+      // on, so the ride isn't silently dropped — they take it when free.
+      else targetIds = ["van1", "van2"].filter((v) => (v === "van1" ? van1Up : van2Up));
+    } else {
+      const drivers = await getDrivers();
+      targetIds = drivers.filter((d) => d.onShift).map((d) => d.id);
+    }
 
-    // Phone push only — no SMS. Each on-shift driver who tapped "Enable phone
-    // alerts" on /driver gets a notification (sound + vibrate) even when the
+    // Phone push only — no SMS. The targeted driver(s) who tapped "Enable phone
+    // alerts" on /driver get a notification (sound + vibrate) even when the
     // page is closed.
-    await sendPushToDrivers(onShiftIds, {
+    await sendPushToDrivers(targetIds, {
       title: "🚐 New pickup",
       body: `${where} — ${name} (party of ${partySize})${note ? ` · "${note.slice(0, 80)}"` : ""}`,
       url: "/driver",

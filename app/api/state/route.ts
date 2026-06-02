@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDrivers, getSettings, getState } from "@/lib/store";
 import { etaMinutes } from "@/lib/geofence";
 import { isOnlineNow } from "@/lib/schedule";
-import { findDriver, findFullDriver } from "@/lib/auth";
+import { findFullDriver, normalizeVan, resolveOperator, vanName } from "@/lib/auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,14 +18,15 @@ export async function GET(req: NextRequest) {
   const url = new URL(req.url);
   const stopId = url.searchParams.get("stopId");
   const driverParam = url.searchParams.get("driver");
+  const vanParam = url.searchParams.get("van");
 
-  // Two lookups: findDriver also accepts the legacy DRIVER_PASSCODE env
-  // var (skeleton key for read access); findFullDriver only resolves
-  // real driver rows, which is what the "me" field below needs.
+  // resolveOperator gates on the passcode (shared DRIVER_PASSCODE or a real NM
+  // code) and, when a van is selected, returns the van as the identity.
+  // findFullDriver only resolves real rows, for the on-shift/phone fields.
   const [settings, state, driverRef, driverRow] = await Promise.all([
     getSettings(),
     getState(),
-    findDriver(driverParam),
+    resolveOperator(driverParam, vanParam),
     findFullDriver(driverParam),
   ]);
   const isDriver = driverRef != null;
@@ -125,21 +126,25 @@ export async function GET(req: NextRequest) {
   }
 
   // `me` is what the driver dashboard uses to tell which rides are "mine".
-  // Prefer the real driver row; fall back to the resolved ref so the legacy
-  // shared DRIVER_PASSCODE (which has no row — findFullDriver returns null)
-  // still gets a stable id. Without this, a legacy driver's claimed rides
-  // render as "claimed by another driver" and lose all their action buttons.
-  const me = driverRow
+  // A selected van is the identity; else the real driver row; else fall back to
+  // the resolved ref so the shared DRIVER_PASSCODE (no row) still gets a stable
+  // id. Without a stable id, claimed rides render as "claimed by another
+  // driver" and lose their action buttons.
+  const vanId = normalizeVan(vanParam);
+  const me = !driverRef // passcode didn't validate → no identity (van param alone can't authenticate)
+    ? null
+    : vanId
+    ? { id: vanId, name: vanName(vanId), onShift: true, phone: null, legacy: false, van: vanId }
+    : driverRow
     ? {
         id: driverRow.id,
         name: driverRow.name,
         onShift: Boolean(driverRow.onShift),
         phone: driverRow.phone ?? null,
         legacy: false,
+        van: null,
       }
-    : driverRef
-    ? { id: driverRef.id, name: driverRef.name, onShift: true, phone: null, legacy: true }
-    : null;
+    : { id: driverRef.id, name: driverRef.name, onShift: true, phone: null, legacy: true, van: null };
 
   return NextResponse.json({
     shuttles: liveShuttles.map((s) => ({

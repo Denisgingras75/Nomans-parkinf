@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { findFullDriver } from "@/lib/auth";
+import { resolveOperator } from "@/lib/auth";
 import { upsertPushSubscription } from "@/lib/store";
 
 export const runtime = "nodejs";
@@ -14,7 +14,7 @@ export async function POST(req: NextRequest) {
   if (!body || typeof body !== "object") {
     return NextResponse.json({ error: "invalid payload" }, { status: 400 });
   }
-  const driver = await findFullDriver(body.passcode);
+  const driver = await resolveOperator(body.passcode, body.van);
   if (!driver) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
