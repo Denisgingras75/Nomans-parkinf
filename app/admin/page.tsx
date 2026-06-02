@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { BBox, Driver, LatLng, Manager, ServiceHours, Settings, Stop } from "@/lib/types";
+import { DEFAULT_BOUNDS } from "@/lib/geofence";
 import { createChimeContext, playChime } from "@/lib/chime";
 import PlacesAutocomplete from "@/components/PlacesAutocomplete";
 
@@ -954,11 +955,14 @@ function BoundsEditor({
     });
   };
 
+  // One-tap: fill the inputs with the Oak Bluffs default AND save it, so the
+  // live box updates immediately (no separate Save step).
   const resetDefault = () => {
-    setSouth("41.438");
-    setNorth("41.472");
-    setWest("-70.578");
-    setEast("-70.546");
+    setSouth(DEFAULT_BOUNDS.south.toString());
+    setNorth(DEFAULT_BOUNDS.north.toString());
+    setWest(DEFAULT_BOUNDS.west.toString());
+    setEast(DEFAULT_BOUNDS.east.toString());
+    onSave(DEFAULT_BOUNDS);
   };
 
   return (
@@ -988,8 +992,13 @@ function BoundsEditor({
         </div>
       </div>
       <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-        <button className="secondary" style={{ width: "auto" }} onClick={resetDefault}>
-          Reset to default
+        <button
+          className="secondary"
+          style={{ width: "auto" }}
+          onClick={resetDefault}
+          disabled={saving}
+        >
+          Reset to Oak Bluffs
         </button>
         <button onClick={save} disabled={saving} style={{ width: "auto" }}>
           Save area
