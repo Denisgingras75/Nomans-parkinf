@@ -63,8 +63,14 @@ export async function POST(req: NextRequest) {
     }
 
     if (body.action === "finish") {
-      const res = await completeRide(rideId);
-      if (!res.ok) return NextResponse.json({ error: "ride not found" }, { status: 404 });
+      const res = await completeRide(rideId, driver.id);
+      if (!res.ok) {
+        const forbidden = res.reason === "forbidden";
+        return NextResponse.json(
+          { error: forbidden ? "that ride belongs to another driver" : "ride not found" },
+          { status: forbidden ? 403 : 404 },
+        );
+      }
       return NextResponse.json({ ok: true });
     }
 
@@ -72,11 +78,24 @@ export async function POST(req: NextRequest) {
     const reason =
       typeof body.reason === "string" && DECLINE_REASONS.has(body.reason) ? body.reason : "other";
     const res = await declineRide(rideId, driver, reason);
-    if (!res.ok) return NextResponse.json({ error: "ride not found" }, { status: 404 });
+    if (!res.ok) {
+      return NextResponse.json(
+        { error: "can't pass this ride — it may be already picked up or gone" },
+        { status: 409 },
+      );
+    }
 
-    // "Done for the day" — take the driver off shift so they stop getting pings.
+    // "Done for the day" — take the driver off shift so they stop getting
+    // pings. Surface a flag if it fails (KV hiccup / missing row) instead of
+    // swallowing it, so the driver isn't left thinking they're off shift when
+    // they're not. (No logger in this app — the flag rides back in the JSON.)
+    let shiftUpdateFailed = false;
     if (reason === "done-for-day") {
-      await updateDriver(driver.id, { onShift: false }).catch(() => {});
+      try {
+        shiftUpdateFailed = (await updateDriver(driver.id, { onShift: false })) == null;
+      } catch {
+        shiftUpdateFailed = true;
+      }
     }
 
     // If no one's holding the ride now, offer it to the drivers who haven't
@@ -105,7 +124,7 @@ export async function POST(req: NextRequest) {
         }
       }
     }
-    return NextResponse.json({ ok: true });
+    return NextResponse.json(shiftUpdateFailed ? { ok: true, shiftUpdateFailed } : { ok: true });
   }
 
   const id = String(body.id ?? "");
@@ -114,7 +133,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "bad id or status" }, { status: 400 });
   }
 
-  const updated = await setStopStatus(id, status);
+  const updated = await setStopStatus(id, status, driver.id);
   if (!updated) return NextResponse.json({ error: "stop not found" }, { status: 404 });
   return NextResponse.json({ ok: true, stop: updated });
 }
