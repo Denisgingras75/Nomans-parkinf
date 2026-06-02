@@ -400,7 +400,7 @@ export default function AdminPage() {
             <div style={{ fontWeight: 700 }}>Phone push alerts to on-shift drivers</div>
             <div className="note">
               {!pushConfigured
-                ? "Set VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY / VAPID_SUBJECT in Vercel env vars to enable push."
+                ? "Set NEXT_PUBLIC_VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY / VAPID_SUBJECT in Vercel env vars to enable push."
                 : settings.alertsEnabled
                 ? "On-shift drivers who tapped “Enable phone alerts” on /driver get a push notification (sound + vibrate) on each new pickup — no texts."
                 : "Pings won't notify drivers until you re-enable this."}
