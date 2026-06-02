@@ -48,7 +48,7 @@ type StateResponse = {
   stops: Stop[];
   nomans: LatLng;
   bounds?: BBox;
-  me: { id: string; name: string; onShift: boolean; phone: string | null } | null;
+  me: { id: string; name: string; onShift: boolean; phone: string | null; legacy: boolean } | null;
 };
 
 export default function DriverPage() {
@@ -511,22 +511,31 @@ export default function DriverPage() {
         >
           <div style={{ flex: 1, minWidth: 160 }}>
             <div style={{ fontWeight: 700 }}>
-              {state.me.onShift ? "● On shift" : "○ Off shift"} · {state.me.name}
+              {state.me.legacy
+                ? "● Shared driver code"
+                : state.me.onShift
+                ? "● On shift"
+                : "○ Off shift"}{" "}
+              · {state.me.name}
             </div>
             <div className="note">
-              {state.me.onShift
+              {state.me.legacy
+                ? "You're on the shared driver code — fine for accepting and running rides. For per-driver push alerts and shift control, add a driver in /admin and log in with that NM- code."
+                : state.me.onShift
                 ? "On shift — you'll get push alerts on new pickups once you've enabled phone alerts below."
                 : "Off shift — no alerts until you flip back on."}
             </div>
           </div>
-          <button
-            className={state.me.onShift ? "danger" : "ok"}
-            onClick={toggleShift}
-            disabled={shiftToggling}
-            style={{ width: "auto" }}
-          >
-            {state.me.onShift ? "Go off shift" : "Go on shift"}
-          </button>
+          {!state.me.legacy && (
+            <button
+              className={state.me.onShift ? "danger" : "ok"}
+              onClick={toggleShift}
+              disabled={shiftToggling}
+              style={{ width: "auto" }}
+            >
+              {state.me.onShift ? "Go off shift" : "Go on shift"}
+            </button>
+          )}
         </div>
       )}
 

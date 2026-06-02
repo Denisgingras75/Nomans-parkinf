@@ -124,13 +124,21 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  // `me` is what the driver dashboard uses to tell which rides are "mine".
+  // Prefer the real driver row; fall back to the resolved ref so the legacy
+  // shared DRIVER_PASSCODE (which has no row — findFullDriver returns null)
+  // still gets a stable id. Without this, a legacy driver's claimed rides
+  // render as "claimed by another driver" and lose all their action buttons.
   const me = driverRow
     ? {
         id: driverRow.id,
         name: driverRow.name,
         onShift: Boolean(driverRow.onShift),
         phone: driverRow.phone ?? null,
+        legacy: false,
       }
+    : driverRef
+    ? { id: driverRef.id, name: driverRef.name, onShift: true, phone: null, legacy: true }
     : null;
 
   return NextResponse.json({
