@@ -31,6 +31,7 @@ p  { margin: 4pt 0; }
 ul, ol { margin: 4pt 0 4pt 0; }
 li { margin: 2pt 0; }
 strong { color: #000; }
+a { color: #1155cc; text-decoration: underline; }
 hr { border: none; border-top: 1px solid #ccc; margin: 10pt 0; }
 code { font-family: Courier, monospace; background: #f3f3f3; font-size: 9.5pt; }
 table { -pdf-keep-with-next: false; width: 100%; border-collapse: collapse;

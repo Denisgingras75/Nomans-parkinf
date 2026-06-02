@@ -3,7 +3,7 @@
 A one-page cheat sheet for running the shuttle. You manage everything from
 your phone or laptop — no app to install, nothing to redeploy.
 
-**Live site:** https://nomansdrive.com
+**Live site:** [https://nomansdrive.com](https://nomansdrive.com)
 
 There are three screens. A bar at the top of every page lets you switch
 between them: **Passenger · Driver · Admin**. You'll mostly live in the
@@ -11,20 +11,24 @@ between them: **Passenger · Driver · Admin**. You'll mostly live in the
 
 | Screen | Who opens it | Address |
 |--------|--------------|---------|
-| **Passenger** | Guests | `nomansdrive.com` |
-| **Driver** | On-shift drivers | `nomansdrive.com/driver` |
-| **Admin** | You | `nomansdrive.com/admin` |
+| **Passenger** | Guests | [nomansdrive.com](https://nomansdrive.com) |
+| **Driver** | On-shift drivers | [nomansdrive.com/driver](https://nomansdrive.com/driver) |
+| **Admin** | You | [nomansdrive.com/admin](https://nomansdrive.com/admin) |
 
 ---
 
 ## 1. Logging in
 
-Open **nomansdrive.com/admin** and enter your **manager code** (looks like
-`MGR-XXXXXX`). Your code is created by the owner and saved on your phone after
-the first login, so you normally won't retype it. You can also scan your
-manager QR code to log straight in.
+Open **[nomansdrive.com/admin](https://nomansdrive.com/admin)** and enter the
+**manager password:**
 
-> Keep your code private — anyone with it can change settings.
+> ### 🔑 `Rumrunner2026`
+
+It's saved on your phone after the first login, so you normally won't retype it.
+(Managers added later get their own personal code that looks like `MGR-XXXXXX`,
+and can also scan a QR code to log straight in.)
+
+> Keep this password private — anyone with it can change settings.
 
 ---
 
@@ -58,7 +62,7 @@ In the **Drivers** section you can:
 - **Add a driver** — type their name + mobile number, save. The app generates a
   private login code (`NM-XXXXXX`) and a QR code for them. (The phone number is
   used so the *guest* can call the driver — alerts themselves are push.)
-- **Send them their code/QR** — they open `nomansdrive.com/driver` and enter it
+- **Send them their code/QR** — they open [nomansdrive.com/driver](https://nomansdrive.com/driver) and enter it
   (or scan the QR). It stays logged in on their phone. (A wrong or retired code
   is now **rejected with "not recognized"** instead of half–logging them in.)
 - **They pick their van** — right after the code, the driver taps **🚐 Van 1**
@@ -127,7 +131,7 @@ locked.
 
 ## 5. What the guest sees
 
-1. Opens `nomansdrive.com`, allows location.
+1. Opens [nomansdrive.com](https://nomansdrive.com), allows location.
 2. Picks **To NoMans** or **From NoMans**, enters **name + phone** (both
    required), party size, optional note.
 3. Taps to request → gets a live **ETA card** and watches the van move on a map
@@ -199,7 +203,7 @@ notification keys / GPS setup) go to the owner.*
 
 ### ▶ OPENING (start of service)
 
-- [ ] Open **nomansdrive.com/admin** and log in with your manager code.
+- [ ] Open **[nomansdrive.com/admin](https://nomansdrive.com/admin)** and log in (password `Rumrunner2026`).
 - [ ] **Service status → Go online.**
 - [ ] At least one driver shows **on shift** (Drivers section).
 - [ ] Each driver has logged in and **picked their van** (🚐 Van 1 / Van 2).
