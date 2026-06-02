@@ -12,7 +12,7 @@ type AdminState = {
   drivers: Driver[];
   today: Stop[];
   legacyDriverEnabled: boolean;
-  smsConfigured: boolean;
+  pushConfigured: boolean;
   shuttles: { id: string; label?: string; position: LatLng | null; heading: number | null; speedMph: number | null; updatedAt: number | null }[];
   onboard: number;
   capacity: number;
@@ -66,7 +66,7 @@ export default function AdminPage() {
     setSmsTesting(true);
     setSmsTestStatus(null);
     try {
-      const res = await fetch("/api/admin/sms-test", {
+      const res = await fetch("/api/admin/push-test", {
         method: "POST",
         headers: { "x-admin-passcode": passcode },
       });
@@ -76,9 +76,9 @@ export default function AdminPage() {
         return;
       }
       if (json.failed === 0) {
-        setSmsTestStatus(`✓ Sent to ${json.sent} driver${json.sent === 1 ? "" : "s"}.`);
+        setSmsTestStatus(`✓ Pushed to ${json.sent} device${json.sent === 1 ? "" : "s"}.`);
       } else {
-        setSmsTestStatus(`Sent ${json.sent}/${json.total}. Failures logged.`);
+        setSmsTestStatus(`Pushed ${json.sent}/${json.total}. Failures logged.`);
       }
     } catch {
       setSmsTestStatus("Network error.");
@@ -314,7 +314,7 @@ export default function AdminPage() {
     );
   }
 
-  const { settings, drivers, today, legacyDriverEnabled, smsConfigured, shuttles, onboard, capacity, onlineReason, bouncie } = data;
+  const { settings, drivers, today, legacyDriverEnabled, pushConfigured, shuttles, onboard, capacity, onlineReason, bouncie } = data;
   // Freshest fix across all vans, for the "updated Ns ago" readout.
   const newestUpdate = shuttles.reduce<number | null>(
     (max, s) => (s.updatedAt != null && (max == null || s.updatedAt > max) ? s.updatedAt : max),
@@ -387,19 +387,19 @@ export default function AdminPage() {
         <hr style={{ border: "none", borderTop: "1px solid var(--border)", margin: "14px 0" }} />
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
           <div>
-            <div style={{ fontWeight: 700 }}>SMS alerts to on-shift drivers</div>
+            <div style={{ fontWeight: 700 }}>Phone push alerts to on-shift drivers</div>
             <div className="note">
-              {!smsConfigured
-                ? "Set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and TWILIO_FROM in Vercel env vars to enable."
+              {!pushConfigured
+                ? "Set VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY / VAPID_SUBJECT in Vercel env vars to enable push."
                 : settings.alertsEnabled
-                ? "Drivers marked on-shift with a phone number get texted on each new pickup."
-                : "Pings won't text drivers until you re-enable this."}
+                ? "On-shift drivers who tapped “Enable phone alerts” on /driver get a push notification (sound + vibrate) on each new pickup — no texts."
+                : "Pings won't notify drivers until you re-enable this."}
             </div>
           </div>
           <button
             className={settings.alertsEnabled ? "danger" : "ok"}
             style={{ width: "auto" }}
-            disabled={savingSettings || !smsConfigured}
+            disabled={savingSettings || !pushConfigured}
             onClick={() => saveSettings({ alertsEnabled: !settings.alertsEnabled })}
           >
             {settings.alertsEnabled ? "Pause alerts" : "Enable alerts"}
@@ -408,9 +408,9 @@ export default function AdminPage() {
         <hr style={{ border: "none", borderTop: "1px solid var(--border)", margin: "14px 0" }} />
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontWeight: 700 }}>SMS path test</div>
+            <div style={{ fontWeight: 700 }}>Push test</div>
             <div className="note">
-              Sends "🚐 TEST PING" to every on-shift driver with a phone on file. Use it before opening for the night.
+              Sends a test notification to every on-shift driver who's enabled phone alerts. Use it before opening for the night.
             </div>
             {smsTestStatus && (
               <div className="note" style={{ marginTop: 6, color: "var(--text-bright)" }}>
@@ -421,10 +421,10 @@ export default function AdminPage() {
           <button
             className="secondary"
             style={{ width: "auto" }}
-            disabled={smsTesting || !smsConfigured}
+            disabled={smsTesting || !pushConfigured}
             onClick={testSms}
           >
-            {smsTesting ? "Sending…" : "Send test SMS"}
+            {smsTesting ? "Sending…" : "Send test push"}
           </button>
         </div>
         <hr style={{ border: "none", borderTop: "1px solid var(--border)", margin: "14px 0" }} />
@@ -588,7 +588,7 @@ export default function AdminPage() {
                 </button>
               )}
 
-              {d.onShift && smsConfigured && settings.alertsEnabled && d.phone && (
+              {d.onShift && pushConfigured && settings.alertsEnabled && (
                 <span className="note" style={{ color: "var(--ok)" }}>🔔 alerts on</span>
               )}
             </div>

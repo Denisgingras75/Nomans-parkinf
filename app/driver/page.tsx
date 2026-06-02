@@ -477,10 +477,8 @@ export default function DriverPage() {
             </div>
             <div className="note">
               {state.me.onShift
-                ? state.me.phone
-                  ? "You'll get SMS on every new pickup."
-                  : "On shift, but no phone number on file — no SMS."
-                : "Off shift — no SMS until you flip back on."}
+                ? "On shift — you'll get push alerts on new pickups once you've enabled phone alerts below."
+                : "Off shift — no alerts until you flip back on."}
             </div>
           </div>
           <button
@@ -509,7 +507,7 @@ export default function DriverPage() {
               ? "This browser doesn't support push. Try Safari 16.4+ or Chrome on Android."
               : pushStatus === "working"
               ? "Setting up…"
-              : "Enable to get pinged like Uber — no SMS, no app store."}
+              : "Enable to get pinged like Uber — no app store. On iPhone, first tap Share → Add to Home Screen, then open this from the home-screen icon."}
           </div>
           {pushError && <div className="error">{pushError}</div>}
         </div>

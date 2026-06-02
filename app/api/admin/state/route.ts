@@ -11,7 +11,7 @@ import {
 } from "@/lib/store";
 import { isAdmin, isBootstrap } from "@/lib/auth";
 import { onlineReason } from "@/lib/schedule";
-import { smsConfigured } from "@/lib/sms";
+import { pushConfigured } from "@/lib/push";
 import type { Stop } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -78,7 +78,7 @@ export async function GET(req: NextRequest) {
     drivers,
     today: merged,
     legacyDriverEnabled: Boolean(process.env.DRIVER_PASSCODE),
-    smsConfigured: smsConfigured(),
+    pushConfigured: pushConfigured(),
     shuttles: state.shuttles,
     onboard: state.onboard,
     capacity: state.capacity,

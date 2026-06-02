@@ -229,16 +229,37 @@ export async function setStopStatus(id: string, status: StopStatus): Promise<Sto
   if (!stop) return null;
   stop.status = status;
   stop.updatedAt = Date.now();
+  const alsoArchive: Stop[] = [];
   if (status === "picked-up" && stop.kind === "pickup") {
     state.onboard = Math.min(state.capacity, state.onboard + stop.partySize);
   }
   if (status === "dropped-off") {
     state.onboard = Math.max(0, state.onboard - stop.partySize);
+    // Dropping off ends the ride. Flip any other still-active leg of the same
+    // ride (notably the passenger's pickup leg — the stopId their page polls)
+    // to dropped-off too, so the passenger sees the "arrived" state instead of
+    // being stuck on "on board". Seats were already released above, so don't
+    // touch onboard again for the sibling.
+    if (stop.rideId) {
+      for (const s of state.stops) {
+        if (
+          s.rideId === stop.rideId &&
+          s.id !== stop.id &&
+          s.status !== "cancelled" &&
+          s.status !== "dropped-off"
+        ) {
+          s.status = "dropped-off";
+          s.updatedAt = stop.updatedAt;
+          alsoArchive.push(s);
+        }
+      }
+    }
   }
   await writeState(state);
   if (status === "picked-up" || status === "dropped-off" || status === "cancelled") {
     await appendToRideArchive(stop);
   }
+  for (const s of alsoArchive) await appendToRideArchive(s);
   return stop;
 }
 

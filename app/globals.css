@@ -65,6 +65,41 @@ main, .page, .driver-page { position: relative; z-index: 10; }
 
 a { color: var(--accent); text-decoration: none; border-bottom: 1px solid currentColor; }
 
+/* Persistent view-switcher bar (Passenger / Driver / Admin) on every page. */
+.nav-tabs {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  display: flex;
+  gap: 4px;
+  justify-content: center;
+  padding: 6px;
+  background: rgba(10, 21, 37, 0.82);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--border);
+}
+.nav-tabs a {
+  flex: 0 1 150px;
+  text-align: center;
+  padding: 9px 12px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  border-bottom: 1px solid transparent; /* override the global underlined <a> */
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text);
+}
+.nav-tabs a:hover { background: rgba(255, 255, 255, 0.05); }
+.nav-tabs a.active {
+  background: var(--accent);
+  color: var(--accent-text);
+  border-color: var(--accent);
+  font-weight: 700;
+}
+
 .page {
   max-width: 560px;
   margin: 0 auto;

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { addStop, cancelRide, getDrivers, getSettings, remainingCapacity } from "@/lib/store";
 import { inBounds } from "@/lib/geofence";
 import { isOnlineNow } from "@/lib/schedule";
-import { normalizePhone, notifyOnShiftDrivers } from "@/lib/sms";
+import { normalizePhone } from "@/lib/sms";
 import { sendPushToDrivers } from "@/lib/push";
 
 export const runtime = "nodejs";
@@ -107,7 +107,6 @@ export async function POST(req: NextRequest) {
   }
 
   if (settings.alertsEnabled) {
-    const origin = new URL(req.url).origin;
     const where = direction === "to-nomans" ? "TO NoMans" : "FROM NoMans";
     // Where the driver actually drives to first = the PICKUP leg. For a
     // to-NoMans ride that's the passenger's GPS spot; for a from-NoMans ride
@@ -115,25 +114,18 @@ export async function POST(req: NextRequest) {
     // maps straight to the right point.
     const pickupPos = direction === "to-nomans" ? { lat, lng } : settings.nomans;
     const navUrl = `https://www.google.com/maps/dir/?api=1&destination=${pickupPos.lat},${pickupPos.lng}`;
-    const noteTail = note ? ` Note: "${note.slice(0, 80)}"` : "";
-    const phoneTail = phone ? ` ${phone}` : "";
-    const smsBody = `🚐 NoMans Combi: ${where}, ${name}${phoneTail} (party of ${partySize}).${noteTail} Open ${origin}/driver`;
     const drivers = await getDrivers();
     const onShiftIds = drivers.filter((d) => d.onShift).map((d) => d.id);
 
-    // Fan out via both channels in parallel — Web Push for drivers who
-    // installed the PWA, Twilio SMS for the rest. Push is cheaper, faster,
-    // and works even when /driver is closed. SMS stays as fallback until
-    // every driver has installed the app.
-    await Promise.allSettled([
-      sendPushToDrivers(onShiftIds, {
-        title: "🚐 New pickup",
-        body: `${where} — ${name} (party of ${partySize})${note ? ` · "${note.slice(0, 80)}"` : ""}`,
-        url: "/driver",
-        navUrl,
-      }),
-      notifyOnShiftDrivers(drivers, smsBody),
-    ]);
+    // Phone push only — no SMS. Each on-shift driver who tapped "Enable phone
+    // alerts" on /driver gets a notification (sound + vibrate) even when the
+    // page is closed.
+    await sendPushToDrivers(onShiftIds, {
+      title: "🚐 New pickup",
+      body: `${where} — ${name} (party of ${partySize})${note ? ` · "${note.slice(0, 80)}"` : ""}`,
+      url: "/driver",
+      navUrl,
+    });
   }
 
   return NextResponse.json({ ok: true, stopId: pickupId });

@@ -2,14 +2,14 @@
 
 On-demand "ping for pickup" shuttle dispatch for **NoMans Restaurant**,
 Oak Bluffs, Martha's Vineyard. Guests open the site on a phone, tap a
-button to request the combi, and the on-shift driver gets an SMS plus a
+button to request the combi, and the on-shift driver gets a push notification plus a
 live queue on a dashboard. Live at **https://nomansdrive.com**
 (Vercel project `nomans-parkinf`, `nomans-parkinf.vercel.app` still
 resolves as an alias). Owner manages everything from `/admin`
 without redeploying.
 
 Stack: Next.js 14 (App Router) · React 18 · Leaflet · Vercel KV
-(Upstash Redis) · Twilio SMS · Bouncie OBD-II webhook for live GPS.
+(Upstash Redis) · Web Push (VAPID) · Bouncie OBD-II webhook for live GPS.
 Deployed on Vercel.
 
 ---
@@ -37,7 +37,7 @@ PR or continued work on this one.
 |-------|-----|------|
 | `/` | Passengers | Mobile-first ping-for-pickup. Geolocation → POST `/api/ping`. Shows ETA card + live shuttle on map. |
 | `/driver` | Drivers | Passcode-gated queue + actions. Audio chime + screen flash on new pings (primed on Unlock for iOS Safari). "Broadcast my phone's GPS" toggle for pre-Bouncie operation. |
-| `/admin` | Owner | Drivers, NoMans pin, service-area bounds, capacity, online/offline toggle, SMS alerts on/off, today's rides. |
+| `/admin` | Owner | Drivers, NoMans pin, service-area bounds, capacity, online/offline toggle, push alerts on/off, today's rides. |
 
 ## API map
 
@@ -51,7 +51,7 @@ PR or continued work on this one.
 | `/api/places/autocomplete` | POST | Google Places (New) Autocomplete proxy (bias = NoMans coord, 8km circle) | none (server-side key) |
 | `/api/places/details` | GET | Resolve a placeId → lat/lng/label | none (server-side key) |
 | `/api/bouncie/webhook` | POST | Bouncie OBD-II location push | secret (query `?secret=` or `X-Bouncie-Secret` header) |
-| `/api/admin/state` | GET | Settings + drivers + today's stops + SMS config status | admin |
+| `/api/admin/state` | GET | Settings + drivers + today's stops + push config status | admin |
 | `/api/admin/settings` | POST | Update nomans / bounds / capacity / online / alertsEnabled | admin |
 | `/api/admin/drivers` | POST · PATCH · DELETE | Manage drivers (name, phone, onShift) | admin |
 
@@ -74,7 +74,8 @@ lib/
   auth.ts                                 # isAdmin + findDriver + findFullDriver
   geofence.ts                             # inBounds, distance, etaMinutes, defaults
   schedule.ts                             # isOnlineNow, onlineReason, DEFAULT_HOURS, parseHHMM (America/New_York)
-  sms.ts                                  # Twilio sender + phone normalization
+  sms.ts                                  # phone normalization only (driver alerts are Web Push — see push.ts)
+  push.ts                                 # Web Push (VAPID) sender — driver alerts on new pings
   chime.ts                                # createChimeContext + playChime (shared by /driver and /admin)
 public/
   nomans-logo.png                         # brand wordmark
@@ -92,15 +93,14 @@ See `SETUP.md` for the owner runbook (Upstash, Twilio, Bouncie, NoMans pin, driv
 **Recommended for production:**
 - `BOUNCIE_WEBHOOK_SECRET` — verifies Bouncie webhook calls
 - `KV_REST_API_URL`, `KV_REST_API_TOKEN` — auto-set when the Upstash Redis integration is added in Vercel Marketplace
-- `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM` — Twilio SMS (FROM is E.164)
+- `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` — Web Push (VAPID) for driver alerts. Driver alerts are **push-only** (no SMS). Generate a key pair with `npx web-push generate-vapid-keys`; `VAPID_SUBJECT` is a `mailto:` URL.
 
 **Optional escape hatches:**
 - `DRIVER_PASSCODE` — legacy single shared driver code; useful as skeleton key if every driver loses their NM-code
 - `SHUTTLE_VEHICLE_ID` — Bouncie VIN/IMEI filter so other vehicles in the same account are ignored
-- `TWILIO_BASE_URL` — override Twilio API endpoint (default `https://api.twilio.com`); used to mock in tests
 - `GOOGLE_PLACES_API_KEY` — server-side key for `/api/places/*` proxies; lights up the address-search input in `/admin` → NoMans pin. Falls back gracefully when absent.
 
-Without KV the app still runs — state lives in process memory and dies on serverless cold starts. Without Twilio the app still runs — SMS calls silently no-op.
+Without KV the app still runs — state lives in process memory and dies on serverless cold starts. Without the VAPID keys the app still runs — push calls silently no-op, so on-shift drivers just won't get notified (they still see the live queue when `/driver` is open).
 
 ---
 
@@ -122,7 +122,7 @@ Settings getter merges stored partials over defaults, so adding new Settings fie
 
 1. **Bounding-box geofence** (not polygon). Polygon was considered and skipped — bounding box is enough for Oak Bluffs and is editable in `/admin`. If you ever need surgical boundaries (e.g. exclude the bridge to East Chop), add a polygon editor; until then the box is correct.
 2. **Driver codes are plaintext in KV.** Auto-generated `NM-XXXXXX` (32^6 ≈ 1B combinations, no `0/O/1/I`). Not hashed. Appropriate at this scale; if you scale up by 10× consider a hash.
-3. **SMS dispatch is awaited**, not fire-and-forget. Each Twilio call has a 2.5s timeout via `AbortController`. Don't add `@vercel/functions` `waitUntil` — overkill for this load.
+3. **Driver alerts are Web Push only — no SMS.** `/api/ping` fans out via `sendPushToDrivers` (`lib/push.ts`) to on-shift drivers who enabled push on `/driver`. SMS/Twilio was removed (owner asked for push, not texts); `lib/sms.ts` is now just `normalizePhone` for tap-to-call. The dispatch is awaited (push send is fast); don't re-add Twilio or `waitUntil`.
 4. **Everything operational lives in KV settings**, not env vars. NoMans coordinate, geofence, capacity, online state, alerts-enabled. Env vars are for secrets and integration credentials only.
 5. **Store API is async.** Don't try to make it sync again. Every consumer awaits.
 6. **Brand:** logo lives at `public/nomans-logo.png` and `app/icon.png`. White card header containing the wordmark + a small tag below. Don't replace with text branding without asking the owner.
@@ -155,7 +155,7 @@ Settings getter merges stored partials over defaults, so adding new Settings fie
 The owner needs to:
 1. Survey the real NoMans coordinate (currently `41.4541, -70.5605` — approximate) and set it via `/admin` → NoMans pin → "Use my current location" at the front door.
 2. Add the Upstash Redis integration in Vercel Marketplace (Storage tab → Create Database → Upstash) so state persists across cold starts.
-3. Buy a Twilio phone number and set the three `TWILIO_*` env vars to enable SMS alerts.
+3. Generate VAPID keys (`npx web-push generate-vapid-keys`) and set `NEXT_PUBLIC_VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` to enable push alerts. Each driver then taps "Enable phone alerts" on `/driver` (on iPhone: Add to Home Screen first).
 4. Add per-driver phone numbers and toggle on-shift in `/admin` before texting works.
 
 ---
@@ -169,5 +169,5 @@ The owner needs to:
 | A shared type | `lib/types.ts` |
 | Anything persistent | Extend `lib/store.ts` (don't add new persistence layers) |
 | Auth gate | Import from `lib/auth.ts` |
-| SMS message | Extend `lib/sms.ts` (Twilio REST, no SDK) |
+| Driver push alert | Extend `lib/push.ts` (Web Push / VAPID) |
 | Brand styling | `app/globals.css` — uses CSS custom properties (`--accent`, `--panel`, etc.) |

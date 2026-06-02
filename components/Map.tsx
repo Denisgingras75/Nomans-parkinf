@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { BBox, LatLng } from "@/lib/types";
 
 type MapStop = {
@@ -73,6 +73,9 @@ export default function Map({
   const boundsRef = useRef<BBox | null | undefined>(bounds);
   boundsRef.current = bounds;
   const boundsFitRef = useRef(false);
+  // Flips true once Leaflet has finished its async init, so the bounds-lock
+  // effect can re-run and apply even when `bounds` arrived before the map.
+  const [mapReady, setMapReady] = useState(false);
 
   // Wall the map into Oak Bluffs: fit to the box once, lock panning to it, and
   // forbid zooming out past it. Safe to call repeatedly — only the first call
@@ -82,12 +85,22 @@ export default function Map({
     const L = leafletRef.current;
     const b = boundsRef.current;
     if (!map || !L || !b) return;
+    // Make sure the container has been measured before we compute zoom from it,
+    // otherwise getBoundsZoom/fitBounds run against a 0-size map (async mount).
+    map.invalidateSize(false);
     const llb = L.latLngBounds([b.south, b.west], [b.north, b.east]);
+    // Never wall off the destination pin — the NoMans coord is settings-driven
+    // and isn't bounds-checked, so it can sit at/just past the box edge.
+    llb.extend([nomans.lat, nomans.lng]);
     map.options.maxBoundsViscosity = 1.0; // hard wall, no rubber-banding
-    map.setMaxBounds(llb.pad(0.12));
+    map.setMaxBounds(llb.pad(0.18));
     if (!boundsFitRef.current) {
+      // getBoundsZoom is synchronous and size-based — unlike reading getZoom()
+      // right after fitBounds(), which can return the pre-fit zoom. Cap the
+      // floor so a tiny admin-drawn box can't trap the view fully zoomed in.
+      const fitZoom = Math.min(map.getBoundsZoom(llb), 16);
+      map.setMinZoom(fitZoom);
       map.fitBounds(llb);
-      map.setMinZoom(map.getZoom()); // can't zoom out past the service area
       boundsFitRef.current = true;
     }
   }
@@ -175,6 +188,7 @@ export default function Map({
       mapRef.current = map;
       applyBoundsLock();
       redraw();
+      setMapReady(true);
     })();
     return () => {
       cancelled = true;
@@ -214,11 +228,12 @@ export default function Map({
   }, [shuttleSig]);
 
   // Apply the Oak Bluffs lock once the box arrives (it loads async from
-  // /api/state, often after the map has already mounted).
+  // /api/state, often after the map has already mounted) AND once the map
+  // itself is ready — whichever lands second wins, closing the mount race.
   useEffect(() => {
     applyBoundsLock();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bounds?.south, bounds?.north, bounds?.east, bounds?.west]);
+  }, [mapReady, bounds?.south, bounds?.north, bounds?.east, bounds?.west]);
 
   // Redraw on any prop change.
   useEffect(() => {
