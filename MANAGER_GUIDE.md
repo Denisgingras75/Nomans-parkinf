@@ -5,13 +5,15 @@ your phone or laptop — no app to install, nothing to redeploy.
 
 **Live site:** https://nomansdrive.com
 
-There are three screens. You'll mostly live in the **Manager** screen.
+There are three screens. A bar at the top of every page lets you switch
+between them: **Passenger · Driver · Admin**. You'll mostly live in the
+**Admin** (Manager) screen.
 
 | Screen | Who opens it | Address |
 |--------|--------------|---------|
 | **Passenger** | Guests | `nomansdrive.com` |
 | **Driver** | On-shift drivers | `nomansdrive.com/driver` |
-| **Manager** | You | `nomansdrive.com/admin` |
+| **Admin** | You | `nomansdrive.com/admin` |
 
 ---
 
@@ -28,7 +30,7 @@ manager QR code to log straight in.
 
 ## 2. Opening & closing the combi (the daily routine)
 
-At the top of the Manager screen is **Service status**.
+At the top of the Admin screen is **Service status**.
 
 - **Go online** — guests can now request rides. Tap it at the start of service.
 - **Take offline** — guests see "the combi is off duty" and can't ping. Tap it
@@ -40,43 +42,59 @@ during that window — the button is just a manual override.
 **Each shift, before guests start pinging:**
 1. Tap **Go online**.
 2. Make sure at least one driver is **on shift** (Drivers section — see below).
-3. Confirm **SMS alerts** are on if you want drivers texted on each request.
+3. Confirm **Push alerts** are on, and that each driver has tapped **Enable
+   phone alerts** on their own phone.
+4. Tap **Send test push** to confirm alerts land.
 
 ---
 
 ## 3. Drivers
 
+Driver alerts are **phone push notifications — no texts.** Each driver enables
+them once on their own phone (see below).
+
 In the **Drivers** section you can:
 
 - **Add a driver** — type their name + mobile number, save. The app generates a
-  private login code (`NM-XXXXXX`) and a QR code for them.
+  private login code (`NM-XXXXXX`) and a QR code for them. (The phone number is
+  used so the *guest* can call the driver — alerts themselves are push.)
 - **Send them their code/QR** — they open `nomansdrive.com/driver` and enter it
   (or scan the QR). It stays logged in on their phone.
+- **Driver enables push** — on `/driver` they tap **"Enable phone alerts."**
+  **On an iPhone they must first** tap Share → **Add to Home Screen**, then open
+  the combi from that home-screen icon, then Enable. (Android: just tap Enable.)
 - **On shift / off shift** — flip a driver on at the start of their shift so
-  they receive new-ride alerts and show up to take rides. Drivers can also flip
+  they receive new-ride pushes and show up to take rides. Drivers can also flip
   themselves off from their own screen.
-- **Phone number matters** — a driver with no number won't get SMS alerts.
-  You'll see a 🔔 **alerts on** tag next to drivers who are fully set up.
+- **🔔 alerts on** tag — shows next to a driver who's on-shift while push alerts
+  are enabled. (It means the system will *try* to push them; they still need to
+  have tapped "Enable phone alerts" on their device.)
 - **Revoke** — removes a driver's code so they can no longer log in.
 
 ---
 
 ## 4. What the driver sees (so you can coach them)
 
-When a guest pings, on-shift drivers get a **chime + screen flash** (and an SMS
-if alerts are on). Each request shows up as a card with the guest's name, party
-size, and any note. On a card the driver can:
+When a guest pings, on-shift drivers get a **push notification (sound + vibrate)
+even with the page closed**, plus a chime + screen flash if `/driver` is open.
+Each request is a card with the guest's name, party size, and any note. The
+**newest ping is highlighted and badged 🆕 NEW** at the top of the queue. On a
+card the driver can:
 
 - **✅ Accept & navigate** — claims the ride and opens Google Maps directions to
-  the pickup. The guest immediately sees "*[driver] is on the way*."
-- **📞 Call / 💬 Text** — one tap to reach the guest (phone is required when they
-  ping, so there's always a number).
+  the pickup. The guest immediately sees "*[driver] is on the way*" along with
+  the driver's name and a **Call driver** button.
+- **📞 Call / 💬 Text the guest** — one tap (phone is required when guests ping,
+  so there's always a number).
 - **Mark en route → Picked up → Dropped off** — optional step-by-step status.
 - **✓ Finished — clear** — one tap to close the whole ride and clear it from the
   queue. The guest sees "*You've arrived 🎉*."
-- **Cancel ride** — cancels the request. It clears from every driver's queue and
-  the guest is told "*Ride cancelled — no driver was able to take this one*,"
-  with a button to ping again.
+- **Decline / Pass to another driver** — the driver picks a reason (**Too far
+  away · Too busy · Busy area · Done for the day**). The ride leaves *their*
+  queue and is **pushed to the next available driver**. "Done for the day" also
+  flips that driver **off shift**. If every available driver passes, the ride is
+  cancelled and the guest is told to ping again. (Reasons show in **Today's
+  rides** so you can see why a ride bounced.)
 
 Only one driver can hold a ride at a time — once claimed, other drivers see it
 locked.
@@ -88,8 +106,13 @@ locked.
 1. Opens `nomansdrive.com`, allows location.
 2. Picks **To NoMans** or **From NoMans**, enters **name + phone** (both
    required), party size, optional note.
-3. Taps to request → gets a live **ETA card** and watches the van move on a map.
-4. Can **cancel** themselves any time before they're picked up.
+3. Taps to request → gets a live **ETA card** and watches the van move on a map
+   (the map stays zoomed to Oak Bluffs).
+4. Once a driver accepts, the card shows the **driver's name + a Call driver
+   button**.
+5. They can **close the page and come back** — their ride status/ETA is
+   remembered on their phone and reloads automatically.
+6. They can **cancel** themselves any time before they're picked up.
 
 Guests outside the Oak Bluffs service area are told they're out of range.
 
@@ -99,10 +122,10 @@ Guests outside the Oak Bluffs service area are told they're out of range.
 
 - **Top counters** — On board now · Stops today · Last GPS fix.
 - **Today's rides** — a running log of every request today (live + completed),
-  so you can see volume and who's riding.
+  including any **decline reasons** (e.g. "↩ Mike: too far away").
 - **Live GPS (Bouncie)** — confirms the van's tracker is reporting in.
-- **Send test SMS** — fires a test text to on-shift drivers so you can confirm
-  alerts are working before service.
+- **Send test push** — sends a test notification to on-shift drivers who've
+  enabled alerts, so you can confirm push works before service.
 - **Driver chime test** — plays the new-ride sound so a driver can confirm their
   phone volume is up.
 
@@ -113,11 +136,11 @@ Guests outside the Oak Bluffs service area are told they're out of range.
 | Setting | What it does |
 |---------|--------------|
 | **NoMans pin** | The restaurant's exact location (pickup/dropoff anchor + map center). |
-| **Service area** | The box guests must be inside to request a ride. |
+| **Service area** | The box guests must be inside to request a ride. Has a one-tap **"Reset to Oak Bluffs"** button that fills + saves the full-town box. |
 | **Capacity** | Total seats available across the fleet. |
 | **Vehicles** | Name your vans (e.g. "Van 1", "Van 2") — shows on the map. |
 | **Service hours** | Auto online/offline window (Eastern time). |
-| **SMS alerts** | Turn driver text alerts on/off. |
+| **Push alerts** | Turn driver push notifications on/off. |
 | **Managers** | Add or revoke other managers. |
 
 Changes save instantly and take effect everywhere — no redeploy.
@@ -128,16 +151,16 @@ Changes save instantly and take effect everywhere — no redeploy.
 
 | Problem | Check |
 |---------|-------|
-| Guests can't request a ride | Is it **online**? Are they inside the **service area**? |
-| Driver isn't getting requests | Are they **on shift**? Is their phone **logged in**? |
-| No SMS alerts | Is **SMS alerts** on, the driver **on shift**, and do they have a **phone number**? Use **Send test SMS**. |
-| Driver hears no chime | Have them tap **Unlock** on their screen once (phones require a tap before they'll play sound), and use **Driver chime test**. |
+| Guests can't request a ride | Is it **online**? Are they inside the **service area**? (Tap **Reset to Oak Bluffs** if the box looks wrong.) |
+| Driver isn't getting requests | Are they **on shift**? Logged in? Did they tap **Enable phone alerts** (and on iPhone, **Add to Home Screen** first)? |
+| No push alerts | **Push alerts** on + driver **on shift** + they tapped **Enable phone alerts**. Use **Send test push**. |
+| Driver hears no chime | Have them tap **Unlock** on their screen once (phones need a tap before they'll play sound), and use **Driver chime test**. |
 | Van not on the map | Check **Live GPS (Bouncie)**; a driver can also use "**Broadcast my phone's GPS**" on their screen as a backup. |
 
 ---
 
-*Questions or changes you can't make here (new manager codes, billing, the
-Twilio/GPS setup) go to the owner.*
+*Questions or changes you can't make here (new manager codes, billing, the push
+notification keys / GPS setup) go to the owner.*
 
 ---
 
@@ -150,14 +173,16 @@ Twilio/GPS setup) go to the owner.*
 - [ ] Open **nomansdrive.com/admin** and log in with your manager code.
 - [ ] **Service status → Go online.**
 - [ ] At least one driver shows **on shift** (Drivers section).
-- [ ] **SMS alerts** are **on** (if you text drivers on each request).
-- [ ] Tap **Send test SMS** — confirm drivers get it.
+- [ ] **Push alerts** are **on**.
+- [ ] Each driver has tapped **Enable phone alerts** on their phone (iPhone: Add
+      to Home Screen first).
+- [ ] Tap **Send test push** — confirm drivers get it.
 - [ ] Have each driver tap **Unlock** on their screen so the chime works.
 - [ ] **Live GPS (Bouncie)** shows the van reporting in (or driver is broadcasting phone GPS).
 
 ### ■ CLOSING (end of night)
 
-- [ ] All rides in the queue are **Finished** or **Cancelled** (queue is empty).
+- [ ] All rides in the queue are **Finished** (queue is empty).
 - [ ] **Service status → Take offline.**
 - [ ] Drivers flip themselves **off shift** (or you do it in Drivers).
 - [ ] Glance at **Today's rides** for the night's count.
@@ -165,10 +190,9 @@ Twilio/GPS setup) go to the owner.*
 ### ⚠ IF SOMETHING'S OFF
 
 - **Guests can't request** → check **online** + they're inside the **service area**.
-- **Driver gets no requests** → check they're **on shift** and **logged in**.
-- **No texts** → **SMS alerts on** + driver **on shift** + has a **phone number**.
+- **Driver gets no requests** → on **shift**, logged in, and tapped **Enable phone alerts**.
+- **No push** → **Push alerts on** + driver **on shift** + alerts enabled on their phone; try **Send test push**.
 - **No chime** → driver taps **Unlock** once; test with **Driver chime test**.
 - **Van missing from map** → check **Live GPS**, or driver turns on **Broadcast my phone's GPS**.
 
 *Anything you can't fix here → call the owner.*
-
