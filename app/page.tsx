@@ -29,6 +29,7 @@ type StateResponse = {
     position: number;
     status: string;
     driverName: string | null;
+    driverPhone: string | null;
   } | null;
 };
 
@@ -238,6 +239,16 @@ export default function PassengerPage() {
               ? "Your driver has your pickup — hang tight."
               : `You're #${yours.position} in the queue.`}
           </div>
+          {yours.driverName && (
+            <div className="driver-chip">
+              <span>🚐 {yours.driverName}</span>
+              {yours.driverPhone && (
+                <a className="contact-link call-link" href={`tel:${yours.driverPhone}`}>
+                  📞 Call driver
+                </a>
+              )}
+            </div>
+          )}
         </div>
       ) : null}
 

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSettings, getState } from "@/lib/store";
+import { getDrivers, getSettings, getState } from "@/lib/store";
 import { etaMinutes } from "@/lib/geofence";
 import { isOnlineNow } from "@/lib/schedule";
 import { findDriver, findFullDriver } from "@/lib/auth";
@@ -69,7 +69,13 @@ export async function GET(req: NextRequest) {
   }));
 
   let yours:
-    | { etaMinutes: number | null; position: number; status: string; driverName: string | null }
+    | {
+        etaMinutes: number | null;
+        position: number;
+        status: string;
+        driverName: string | null;
+        driverPhone: string | null;
+      }
     | null = null;
   if (stopId) {
     const me = state.stops.find((s) => s.id === stopId);
@@ -90,11 +96,19 @@ export async function GET(req: NextRequest) {
           ? Math.min(...etaSource.map((s) => etaMinutes(s.position!, me.position))) +
             queuedAhead * 3
           : null;
+      // Surface the assigned driver's name + number so the passenger can see
+      // who's coming and tap to call them right from the status card.
+      let driverPhone: string | null = null;
+      if (me.assignedDriverId) {
+        const drivers = await getDrivers();
+        driverPhone = drivers.find((d) => d.id === me.assignedDriverId)?.phone ?? null;
+      }
       yours = {
         etaMinutes: eta,
         position: queuedAhead + 1,
         status: me.status,
         driverName: me.assignedDriverName ?? null,
+        driverPhone,
       };
     }
   }

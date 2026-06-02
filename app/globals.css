@@ -316,6 +316,16 @@ button.ok:hover:not(:disabled) { background: #c89a44; }
   50% { box-shadow: 0 0 0 1px var(--accent), 0 0 16px rgba(224, 151, 96, 0.5); }
 }
 .tag.new-ping { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 700; }
+/* Driver name + call button on the passenger's live status card. */
+.driver-chip {
+  margin-top: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-weight: 600;
+}
 
 /* Permanent van name labels on the map — dark-themed to match the basemap. */
 .leaflet-tooltip.van-label {
