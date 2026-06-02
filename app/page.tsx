@@ -200,7 +200,25 @@ export default function PassengerPage() {
         </div>
       )}
 
-      {stopId && yours ? (
+      {stopId && yours && yours.status === "cancelled" ? (
+        <div className="eta-card" style={{ borderColor: "var(--danger)" }}>
+          <div className="label">Ride cancelled</div>
+          <div style={{ marginTop: 6, fontSize: 14 }}>
+            No driver was able to take this one. Tap below to ping the combi again.
+          </div>
+          <button style={{ marginTop: 12 }} onClick={clearLocal}>
+            Ping again
+          </button>
+        </div>
+      ) : stopId && yours && yours.status === "dropped-off" ? (
+        <div className="eta-card">
+          <div className="label">You've arrived 🎉</div>
+          <div style={{ marginTop: 6, fontSize: 14 }}>Thanks for riding the combi.</div>
+          <button style={{ marginTop: 12 }} onClick={clearLocal}>
+            Done
+          </button>
+        </div>
+      ) : stopId && yours ? (
         <div className="eta-card">
           <div className="label">
             {yours.status === "picked-up"
@@ -330,7 +348,7 @@ export default function PassengerPage() {
         </div>
       )}
 
-      {stopId && (
+      {stopId && !(yours && (yours.status === "cancelled" || yours.status === "dropped-off")) && (
         <div className="card">
           <button className="secondary" disabled={cancelling} onClick={cancel}>
             {cancelling ? "Cancelling…" : "Cancel this ride"}

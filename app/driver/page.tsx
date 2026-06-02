@@ -298,6 +298,22 @@ export default function DriverPage() {
     claim(rideId, "accept");
   };
 
+  // "Finished" — complete the whole ride in one tap. Both legs go terminal and
+  // the ride drops out of the queue on the next poll.
+  const finish = async (rideId: string | undefined) => {
+    if (!rideId) return;
+    setError(null);
+    const res = await fetch("/api/stops", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "finish", rideId, passcode }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setError(data.error ?? "Couldn't clear the ride");
+    }
+  };
+
   // ----- Driver-phone GPS broadcast -----
   const startBroadcast = () => {
     setBroadcastError(null);
@@ -523,6 +539,13 @@ export default function DriverPage() {
             const mine = !!s.assignedDriverId && s.assignedDriverId === myId;
             const claimedByOther = !!s.assignedDriverId && !mine;
             const unclaimed = !s.assignedDriverId;
+            // Show one "Finished" shortcut per ride: on the pickup card while
+            // it's still in the queue, otherwise on the dropoff card (the
+            // pickup leg drops out once it's marked picked-up).
+            const siblingPickupActive = queued.some(
+              (q) => q.rideId === s.rideId && q.kind === "pickup",
+            );
+            const showFinish = mine && (s.kind === "pickup" || !siblingPickupActive);
             return (
               <div key={s.id} className={`stop${claimedByOther ? " claimed-other" : ""}`}>
                 <div className="stop-head">
@@ -580,9 +603,14 @@ export default function DriverPage() {
                           Dropped off
                         </button>
                       )}
+                      {showFinish && (
+                        <button className="finish" onClick={() => finish(s.rideId)}>
+                          ✓ Finished — clear
+                        </button>
+                      )}
                       {mine && (
                         <button className="secondary" onClick={() => claim(s.rideId, "decline")}>
-                          Release
+                          Cancel ride
                         </button>
                       )}
                     </div>

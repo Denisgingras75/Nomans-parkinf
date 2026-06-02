@@ -315,36 +315,51 @@ export async function claimRide(
   return { ok: true, legs };
 }
 
-// Driver declines a ride. If they'd claimed it, the claim is released back to
-// the queue so the other van can take it. If it's still unclaimed, it's just
-// dismissed from *this* driver's queue (stays live for everyone else).
-export async function declineRide(
-  rideId: string,
-  driver: { id: string; name: string },
-): Promise<{ ok: boolean; released: boolean }> {
+// Driver "Finished" — complete a whole ride in one tap. Every still-active leg
+// (pickup + dropoff) flips to the terminal "dropped-off" state, so the ride
+// leaves the driver's queue and the passenger's feed reads "dropped-off". If
+// the passenger was already onboard (pickup was picked-up), we release their
+// seats back to the fleet pool. Archived so it shows in "Today's rides".
+export async function completeRide(rideId: string): Promise<{ ok: boolean }> {
   const state = await readState();
   const legs = state.stops.filter(
     (s) => s.rideId === rideId && s.status !== "cancelled" && s.status !== "dropped-off",
   );
-  if (legs.length === 0) return { ok: false, released: false };
-
-  const mine = legs.some((s) => s.assignedDriverId === driver.id);
+  if (legs.length === 0) return { ok: false };
   const now = Date.now();
+  const wasOnboard = legs.some((s) => s.kind === "pickup" && s.status === "picked-up");
   for (const s of legs) {
-    if (mine) {
-      if (s.assignedDriverId === driver.id) {
-        s.assignedDriverId = undefined;
-        s.assignedDriverName = undefined;
-        if (s.status === "accepted" || s.status === "enroute") s.status = "queued";
-        s.updatedAt = now;
-      }
-    } else if (!s.assignedDriverId) {
-      s.dismissedBy = Array.from(new Set([...(s.dismissedBy ?? []), driver.id]));
-      s.updatedAt = now;
-    }
+    s.status = "dropped-off";
+    s.updatedAt = now;
   }
+  if (wasOnboard) state.onboard = Math.max(0, state.onboard - (legs[0]?.partySize ?? 0));
   await writeState(state);
-  return { ok: true, released: mine };
+  for (const s of legs) await appendToRideArchive(s);
+  return { ok: true };
+}
+
+// Driver "Decline" — cancel a ride outright. Both legs go terminal-cancelled,
+// the claim (if any) is dropped, the ride leaves *every* driver's queue, and
+// the passenger's status feed flips to "cancelled" so their page can tell them
+// no driver took it and invite a re-ping.
+export async function cancelRideByDriver(rideId: string): Promise<{ ok: boolean }> {
+  const state = await readState();
+  const legs = state.stops.filter(
+    (s) => s.rideId === rideId && s.status !== "cancelled" && s.status !== "dropped-off",
+  );
+  if (legs.length === 0) return { ok: false };
+  const now = Date.now();
+  const wasOnboard = legs.some((s) => s.kind === "pickup" && s.status === "picked-up");
+  for (const s of legs) {
+    s.status = "cancelled";
+    s.assignedDriverId = undefined;
+    s.assignedDriverName = undefined;
+    s.updatedAt = now;
+  }
+  if (wasOnboard) state.onboard = Math.max(0, state.onboard - (legs[0]?.partySize ?? 0));
+  await writeState(state);
+  for (const s of legs) await appendToRideArchive(s);
+  return { ok: true };
 }
 
 export async function remainingCapacity(): Promise<number> {
