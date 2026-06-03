@@ -321,7 +321,11 @@ export default function PassengerPage() {
           <div style={{ marginTop: 16 }}>
             <label>{direction === "to-nomans" ? "Pickup address" : "Dropoff address"}</label>
             <PlacesAutocomplete
-              placeholder={direction === "to-nomans" ? "e.g. Wesley House, Oak Bluffs" : "Drop me at…"}
+              placeholder={
+                direction === "to-nomans"
+                  ? "Landmark or address — e.g. Tony's Market"
+                  : "Landmark or address — e.g. the Wesley Hotel"
+              }
               initialValue={meLabel && meLabel !== "Current location" ? meLabel : ""}
               onPick={(p) => {
                 setMe(p.position);

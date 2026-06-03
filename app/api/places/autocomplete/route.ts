@@ -42,7 +42,11 @@ export async function POST(req: NextRequest) {
           radius: 8000, // 8km — covers Oak Bluffs, Edgartown, VH, neighboring towns
         },
       },
-      includedPrimaryTypes: ["geocode", "establishment"],
+      // No includedPrimaryTypes filter on purpose: we want the full natural
+      // result set so guests can type a landmark/business ("Tony's Market",
+      // "Jim's package store") OR a street address and have it resolve.
+      // Restricting to a type collection makes establishments rank poorly /
+      // drop out for a wide bias radius.
     }),
   });
 
