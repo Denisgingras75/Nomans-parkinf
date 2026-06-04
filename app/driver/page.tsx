@@ -548,6 +548,25 @@ export default function DriverPage() {
     .filter((s) => s.status === "queued" || s.status === "accepted" || s.status === "enroute")
     .filter((s) => !(s.rideId && hiddenRides.has(s.rideId)))
     .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
+  // One card per ride. A ride is two stops (pickup + dropoff legs sharing a
+  // rideId) — rendering both made a single request show up as two queue cards.
+  // While the passenger is still waiting the pickup leg represents the ride;
+  // once they're picked up the pickup leg goes terminal (drops out of `queued`)
+  // and the dropoff leg becomes the representative for the "Dropped off" step.
+  // The map still gets both legs so the whole trip shows.
+  const rideCards = (() => {
+    const byRide: Record<string, (typeof queued)[number]> = {};
+    const loose: (typeof queued)[number][] = [];
+    for (const s of queued) {
+      if (!s.rideId) {
+        loose.push(s);
+        continue;
+      }
+      const seen = byRide[s.rideId];
+      if (!seen || (seen.kind === "dropoff" && s.kind === "pickup")) byRide[s.rideId] = s;
+    }
+    return [...Object.values(byRide), ...loose].sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
+  })();
   const shuttles = (state?.shuttles ?? []).filter(
     (s): s is ShuttleFeed & { position: LatLng } => s.position != null,
   );
@@ -694,14 +713,30 @@ export default function DriverPage() {
       <div className="driver-grid">
         <div>
           <h2>Queue</h2>
-          {queued.length === 0 && <div className="card note">Nothing queued. Cruise the loop.</div>}
-          {queued.map((s) => {
+          {rideCards.length === 0 && <div className="card note">Nothing queued. Cruise the loop.</div>}
+          {rideCards.map((s) => {
             const navUrl = `https://www.google.com/maps/dir/?api=1&destination=${s.position.lat},${s.position.lng}`;
             const myId = state?.me?.id;
             const mine = !!s.assignedDriverId && s.assignedDriverId === myId;
             const claimedByOther = !!s.assignedDriverId && !mine;
             const unclaimed = !s.assignedDriverId;
             const distMi = myPos && s.kind === "pickup" ? distanceMiles(myPos, s.position) : null;
+            // Which way the trip runs, so the single card still tells the driver
+            // where the passenger is headed (the dropoff leg isn't its own card
+            // anymore). Decided by which leg sits on the NoMans pin.
+            const near = (p?: { lat: number; lng: number } | null) =>
+              !!p && Math.abs(p.lat - nomans.lat) < 1e-4 && Math.abs(p.lng - nomans.lng) < 1e-4;
+            const pickupLeg = s.rideId
+              ? stops.find((q) => q.rideId === s.rideId && q.kind === "pickup")
+              : null;
+            const dropoffLeg = s.rideId
+              ? stops.find((q) => q.rideId === s.rideId && q.kind === "dropoff")
+              : null;
+            const tripText = near(dropoffLeg?.position)
+              ? "🍴 Take to NoMans"
+              : near(pickupLeg?.position)
+              ? "🚐 Pick up at NoMans → drop-off"
+              : null;
             // Show one "Finished" shortcut per ride: on the pickup card while
             // it's still in the queue, otherwise on the dropoff card (the
             // pickup leg drops out once it's marked picked-up).
@@ -736,6 +771,9 @@ export default function DriverPage() {
                     {ago && <div className="note" style={{ fontSize: 11, marginTop: 2 }}>{ago}</div>}
                   </div>
                 </div>
+                {tripText && (
+                  <div style={{ marginTop: 4, fontWeight: 600, color: "var(--gilt)" }}>{tripText}</div>
+                )}
                 {s.note && <div className="note">&ldquo;{s.note}&rdquo;</div>}
                 {distMi != null && (
                   <div className="note" style={{ marginTop: 4 }}>
